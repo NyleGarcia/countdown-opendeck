@@ -39,6 +39,20 @@ node scripts/smoke-test.js
 Fake OpenDeck WebSocket server; launches the plugin via `run.sh` and drives
 start/pause/finish/reset/settings/dial/overtime through the real protocol.
 
+## Releases
+Semver, driven by git tags. `manifest.json` `Version` is the source of truth.
+
+```sh
+scripts/release.sh patch|minor|major|X.Y.Z[-rc.N] [--push]
+```
+Bumps `Version`, commits `Release vX.Y.Z`, tags `vX.Y.Z` (refuses dirty tree, existing
+tag, or going backwards; bumping a prerelease finalises it). Pushing the tag runs the
+**Release** workflow: checks tag == manifest version, runs the smoke test, uploads
+`countdown-opendeck-X.Y.Z.zip` (+ sha256) to a GitHub Release. `-suffix` tags become
+prereleases. Install the zip in OpenDeck via *Plugins → Install from file*.
+
+**CI** runs on every push/PR: syntax check, manifest/asset validation, shellcheck, smoke test.
+
 ## Layout
 ```
 dev.countdown.sdPlugin/

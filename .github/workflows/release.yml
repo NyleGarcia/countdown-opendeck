@@ -1,0 +1,67 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Verify tag matches manifest version
+        run: |
+          set -euo pipefail
+          TAG="$GITHUB_REF_NAME"
+          if ! [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::tag '$TAG' is not a valid semver tag (expected vX.Y.Z or vX.Y.Z-pre)"
+            exit 1
+          fi
+          VERSION="${TAG#v}"
+          MANIFEST_VERSION="$(node -e 'console.log(require("./dev.countdown.sdPlugin/manifest.json").Version)')"
+          if [ "$VERSION" != "$MANIFEST_VERSION" ]; then
+            echo "::error::tag '$TAG' (version $VERSION) does not match manifest Version '$MANIFEST_VERSION'"
+            exit 1
+          fi
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+
+      - name: Smoke test
+        run: |
+          set -euo pipefail
+          export COUNTDOWN_NODE="$(command -v node)"
+          node scripts/smoke-test.js
+
+      - name: Package plugin
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          ZIP="dist/countdown-opendeck-${VERSION}.zip"
+          zip -r "$ZIP" dev.countdown.sdPlugin -x '*.log'
+          (cd dist && sha256sum "$(basename "$ZIP")" > "$(basename "$ZIP").sha256")
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          assets=(dist/*)
+          prerelease_flag=()
+          if [[ "$GITHUB_REF_NAME" == *-* ]]; then
+            prerelease_flag=(--prerelease)
+          fi
+          gh release create "$GITHUB_REF_NAME" "${assets[@]}" \
+            --title "$GITHUB_REF_NAME" \
+            --generate-notes \
+            --verify-tag \
+            "${prerelease_flag[@]}"

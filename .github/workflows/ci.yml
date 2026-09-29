@@ -1,0 +1,107 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Syntax check JS files
+        run: |
+          set -euo pipefail
+          for f in dev.countdown.sdPlugin/plugin.js scripts/*.js; do
+            echo "checking $f"
+            node --check "$f"
+          done
+
+      - name: Validate manifest and layout JSON
+        run: |
+          set -euo pipefail
+          node -e '
+          const fs = require("fs");
+          const path = require("path");
+
+          const pluginDir = path.join(process.cwd(), "dev.countdown.sdPlugin");
+          const manifestPath = path.join(pluginDir, "manifest.json");
+          const stripPath = path.join(pluginDir, "layouts", "strip.json");
+
+          function readJSON(p) {
+            return JSON.parse(fs.readFileSync(p, "utf8"));
+          }
+
+          const manifest = readJSON(manifestPath);
+          readJSON(stripPath);
+
+          if (!/^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/.test(manifest.Version)) {
+            throw new Error("manifest.Version is not valid semver: " + manifest.Version);
+          }
+
+          function checkFile(rel, label) {
+            if (!rel) throw new Error(label + " is missing from manifest");
+            const p = path.join(pluginDir, rel);
+            if (!fs.existsSync(p)) throw new Error(label + " does not exist: " + rel);
+          }
+
+          function checkIcon(rel, label) {
+            if (!rel) return;
+            const svg = path.join(pluginDir, rel + ".svg");
+            const png = path.join(pluginDir, rel + ".png");
+            if (!fs.existsSync(svg) && !fs.existsSync(png)) {
+              throw new Error(label + " missing (.svg or .png): " + rel);
+            }
+          }
+
+          checkFile(manifest.CodePath, "CodePath");
+          checkIcon(manifest.Icon, "Icon");
+          checkIcon(manifest.CategoryIcon, "CategoryIcon");
+
+          if (!Array.isArray(manifest.Actions) || manifest.Actions.length === 0) {
+            throw new Error("manifest.Actions must be a non-empty array");
+          }
+
+          for (const action of manifest.Actions) {
+            if (!action.UUID || !action.UUID.startsWith("dev.countdown.")) {
+              throw new Error("Action UUID must start with dev.countdown.: " + action.UUID);
+            }
+            if (action.PropertyInspectorPath) {
+              checkFile(action.PropertyInspectorPath, "PropertyInspectorPath");
+            }
+            if (Array.isArray(action.States)) {
+              for (const state of action.States) {
+                if (state.Image) checkIcon(state.Image, "States[].Image");
+              }
+            }
+            if (action.Encoder && action.Encoder.layout) {
+              checkFile(action.Encoder.layout, "Encoder.layout");
+            }
+          }
+
+          console.log("manifest validation OK");
+          '
+
+      - name: Shellcheck
+        run: shellcheck dev.countdown.sdPlugin/run.sh scripts/*.sh
+
+      - name: Smoke test
+        run: |
+          set -euo pipefail
+          export COUNTDOWN_NODE="$(command -v node)"
+          node scripts/smoke-test.js
