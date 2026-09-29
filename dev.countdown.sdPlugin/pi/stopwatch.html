@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Stopwatch</title>
+<link rel="stylesheet" href="_shared.css" />
+<script src="_shared.js"></script>
+</head>
+<body>
+  <label for="label">Label <span class="muted">(optional, above the time)</span></label>
+  <input id="label" type="text" maxlength="12" placeholder="Lap" />
+
+  <p class="hint">
+    Tap: start / pause. Hold: reset.<br />
+    On a dial: press to start / pause, touch the strip to reset.<br />
+    The ring sweeps once a minute. The stopwatch keeps running across page changes and
+    OpenDeck restarts.
+  </p>
+<script>
+PI.init({ label: "" }, (s) => PI.fillAlarm(s));
+PI.bindAlarm();
+</script>
+</body>
+</html>

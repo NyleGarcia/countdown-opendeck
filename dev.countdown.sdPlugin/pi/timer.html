@@ -4,29 +4,8 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Countdown Timer</title>
-<style>
-:root { color-scheme: dark; }
-body {
-  font: 13px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
-  color: #e9eef5; background: #1b1f26; margin: 0; padding: 14px;
-}
-label { display: block; margin: 10px 0 4px; color: #b6c0cf; font-weight: 600; }
-label.check { display: flex; gap: 8px; align-items: center; font-weight: 400; color: #e9eef5; margin: 6px 0; }
-input[type=text], input[type=number], select {
-  width: 100%; box-sizing: border-box; padding: 6px 8px; border-radius: 6px;
-  border: 1px solid #38414f; background: #10141a; color: #e9eef5; font: inherit;
-}
-.row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
-.row span { display: block; color: #8a94a6; font-size: 11px; margin-top: 2px; text-align: center; }
-.presets { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
-button {
-  padding: 5px 10px; border-radius: 6px; border: 1px solid #38414f;
-  background: #262c35; color: #e9eef5; font: inherit; cursor: pointer;
-}
-button:hover { background: #313946; }
-.hint { color: #8a94a6; margin: 12px 0 0; }
-hr { border: 0; border-top: 1px solid #2c333e; margin: 14px 0 4px; }
-</style>
+<link rel="stylesheet" href="_shared.css" />
+<script src="_shared.js"></script>
 </head>
 <body>
   <label>Duration</label>
@@ -44,7 +23,7 @@ hr { border: 0; border-top: 1px solid #2c333e; margin: 14px 0 4px; }
     <button data-s="3600">1h</button>
   </div>
 
-  <label for="label">Label <span style="font-weight:400;color:#8a94a6">(optional, above time)</span></label>
+  <label for="label">Label <span class="muted">(optional, above the time)</span></label>
   <input id="label" type="text" maxlength="12" placeholder="Tea" />
 
   <hr />
@@ -69,88 +48,32 @@ hr { border: 0; border-top: 1px solid #2c333e; margin: 14px 0 4px; }
 
   <p class="hint">
     Tap: start / pause. Hold: reset. Tap while ringing: dismiss.<br />
-    Duration changes made mid-run apply on next reset.
+    Duration changes made mid-run apply on the next reset.
   </p>
-
 <script>
-// Connects under both conventions OpenDeck ships: the Elgato global function and
-// OpenDeck's openDeckConnection promise. Settings go out on the ACTION context
-// (actionInfo.context), not the inspector uuid.
-(function () {
-  let socket = null, context = null, settings = {};
-  const $ = (id) => document.getElementById(id);
-  const DEFAULTS = {
-    hours: 0, minutes: 5, seconds: 0, label: "", flash: true, sound: true,
-    repeatSound: false, overtime: false, soundFile: "", dialStep: 60,
-  };
-
-  function fill() {
-    const s = Object.assign({}, DEFAULTS, settings);
-    ["hours", "minutes", "seconds", "label", "soundFile"].forEach((k) => { $(k).value = s[k]; });
-    ["flash", "sound", "repeatSound", "overtime"].forEach((k) => { $(k).checked = !!s[k]; });
-    $("dialStep").value = String(s.dialStep);
-  }
-
-  function save(patch) {
-    settings = Object.assign({}, DEFAULTS, settings, patch);
-    if (socket && socket.readyState === 1) {
-      socket.send(JSON.stringify({ event: "setSettings", context, payload: settings }));
-    }
-  }
-
-  function toPlugin(payload) {
-    if (socket && socket.readyState === 1) {
-      socket.send(JSON.stringify({ event: "sendToPlugin", context, payload }));
-    }
-  }
-
-  const clamp = (v, max) => Math.max(0, Math.min(max, Math.floor(Number(v) || 0)));
-
-  ["hours", "minutes", "seconds"].forEach((k) => {
-    $(k).addEventListener("change", () => {
-      const max = k === "hours" ? 99 : 59;
-      $(k).value = clamp($(k).value, max);
-      save({ [k]: Number($(k).value) });
-    });
+const $ = (id) => document.getElementById(id);
+const clamp = (v, max) => Math.max(0, Math.min(max, Math.floor(Number(v) || 0)));
+function fill(s) {
+  ["hours", "minutes", "seconds"].forEach((k) => { $(k).value = s[k]; });
+  $("dialStep").value = String(s.dialStep);
+  PI.fillAlarm(s);
+}
+PI.init({ hours: 0, minutes: 5, seconds: 0, label: "", flash: true, sound: true,
+  repeatSound: false, overtime: false, soundFile: "", dialStep: 60 }, fill);
+PI.bindAlarm();
+["hours", "minutes", "seconds"].forEach((k) => {
+  $(k).addEventListener("change", () => {
+    $(k).value = clamp($(k).value, k === "hours" ? 99 : 59);
+    PI.save({ [k]: Number($(k).value) });
   });
-  $("label").addEventListener("change", () => save({ label: $("label").value }));
-  $("soundFile").addEventListener("change", () => save({ soundFile: $("soundFile").value.trim() }));
-  $("dialStep").addEventListener("change", () => save({ dialStep: Number($("dialStep").value) }));
-  ["flash", "sound", "repeatSound", "overtime"].forEach((k) => {
-    $(k).addEventListener("change", () => save({ [k]: $(k).checked }));
-  });
-  $("presets").addEventListener("click", (e) => {
-    const s = Number(e.target.dataset && e.target.dataset.s);
-    if (!s) return;
-    save({ hours: Math.floor(s / 3600), minutes: Math.floor((s % 3600) / 60), seconds: s % 60 });
-    fill();
-  });
-  $("test").addEventListener("click", () => toPlugin({ command: "testSound" }));
-
-  function start(port, uuid, registerEvent, _info, actionInfo) {
-    const info = typeof actionInfo === "string" ? JSON.parse(actionInfo) : actionInfo;
-    context = info.context;
-    settings = (info.payload && info.payload.settings) || {};
-    fill();
-    socket = new WebSocket("ws://127.0.0.1:" + port);
-    socket.onopen = () => socket.send(JSON.stringify({ event: registerEvent, uuid }));
-    socket.onmessage = (event) => {
-      let msg;
-      try { msg = JSON.parse(event.data); } catch (e) { return; }
-      if (msg.event === "didReceiveSettings") {
-        settings = (msg.payload && msg.payload.settings) || {};
-        fill();
-      }
-    };
-  }
-
-  fill();
-  window.connectElgatoStreamDeckSocket = start;
-  window.connectSocket = start;
-  if (window.openDeckConnection && window.openDeckConnection.then) {
-    window.openDeckConnection.then((a) => start.apply(null, a));
-  }
-})();
+});
+$("dialStep").addEventListener("change", () => PI.save({ dialStep: Number($("dialStep").value) }));
+$("presets").addEventListener("click", (e) => {
+  const s = Number(e.target.dataset && e.target.dataset.s);
+  if (!s) return;
+  PI.save({ hours: Math.floor(s / 3600), minutes: Math.floor((s % 3600) / 60), seconds: s % 60 });
+  fill(PI.settings);
+});
 </script>
 </body>
 </html>

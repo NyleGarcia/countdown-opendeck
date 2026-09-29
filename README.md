@@ -3,44 +3,53 @@
 [![CI](https://github.com/NyleGarcia/countdown-opendeck/actions/workflows/ci.yml/badge.svg)](https://github.com/NyleGarcia/countdown-opendeck/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/NyleGarcia/countdown-opendeck?sort=semver)](https://github.com/NyleGarcia/countdown-opendeck/releases/latest)
 
-A countdown timer for Stream Deck keys and Stream Deck+ dials, built for
-[OpenDeck](https://github.com/nekename/OpenDeck) on Linux. You set the duration per key. The key
-shows big digits inside a progress ring, and it flashes and plays a sound when the timer ends.
+Timers for Stream Deck keys and Stream Deck+ dials, built for
+[OpenDeck](https://github.com/nekename/OpenDeck) on Linux. The plugin has three actions:
 
-![Key states: idle, running with a label, nearly done, paused, finished. Below them, the touch strip running and paused.](.github/preview.png)
+- **Countdown Timer:** counts down a duration you set per key.
+- **Countdown to Date:** counts down to a date and time, or to a time every day.
+- **Stopwatch:** counts up. It keeps running across page changes and OpenDeck restarts.
+
+Each key shows big digits inside a progress ring. The countdowns flash and play a sound when they reach zero.
+
+![Top row: the timer idle, running with a label, nearly done, paused and finished. Middle row: a date twelve days away, a daily 17:00 target showing its day, a date seven minutes away, and the stopwatch running and paused. Bottom row: the touch strip for each.](.github/preview.png)
 
 ## Features
 
 - **Configurable duration:** hours, minutes and seconds, plus one-click presets (1m, 5m, 10m, 15m, 25m, 1h).
+- **Count down to a moment:** a fixed date and time, or a time of day that repeats every day. More
+  than a day away shows days, with hours and minutes underneath (`12d` over `03:59`).
+- **Stopwatch:** the ring sweeps once a minute, like a second hand.
 - **Readable at a glance:** seven-segment digits are drawn into the key image, so they don't depend
   on OpenDeck's title font size.
-- **Progress ring:** green, then amber under 25%, then red under 10%. It turns grey with pause bars when paused.
+- **Progress ring:** on the timer it goes green, then amber under 25%, then red under 10%. On a date
+  countdown it shows progress since you set the target, going amber under an hour and red under
+  10 minutes. It turns grey with pause bars when paused.
 - **Stream Deck+ touch strip:** large digits over a progress bar.
 - **Finish alarm:** the key flashes red and plays a sound. The sound can repeat until you dismiss it.
 - **Overtime (optional):** keeps counting up after zero, for example `+0:12`.
 - **Optional label:** a short name drawn above the time, like "Tea" or "Pomodoro".
-- **Runs in the background:** a timer keeps going when you switch pages or profiles.
+- **Runs in the background:** timers keep going when you switch pages or profiles.
 - **No dependencies:** plain Node.js, no `npm install`.
 
 ## Controls
 
-| Key | Does |
-|---|---|
-| Tap | Start / pause |
-| Hold (≥ 0.6 s) | Reset |
-| Tap while ringing | Dismiss and reset |
+| | Countdown Timer | Countdown to Date | Stopwatch |
+|---|---|---|---|
+| Tap | Start / pause | Show the target date for a moment | Start / pause |
+| Hold (≥ 0.6 s) | Reset | Same as tap | Reset |
+| Tap while ringing | Dismiss and reset | Dismiss | n/a |
+| Dial: rotate | Change the duration (while stopped) | n/a | n/a |
+| Dial: press | Start / pause | Show target / dismiss | Start / pause |
+| Touch the strip | Reset | Show target / dismiss | Reset |
 
-| Dial (Stream Deck+) | Does |
-|---|---|
-| Rotate | Change the duration (only while stopped) |
-| Press | Start / pause |
-| Touch the strip | Reset |
-
-If you change the duration while a timer is running, the new value takes effect on the next reset.
+If you change a timer's duration while it's running, the new value takes effect on the next reset.
 
 ## Settings
 
 Select the key in OpenDeck to open its settings panel.
+
+### Countdown Timer
 
 | Setting | Default | Notes |
 |---|---|---|
@@ -52,6 +61,26 @@ Select the key in OpenDeck to open its settings panel.
 | Keep counting up after zero | Off | Shows `+M:SS` |
 | Sound file | `/usr/share/sounds/freedesktop/stereo/alarm-clock-elapsed.oga` | Any file your player can read. Use **Test sound** to check it. |
 | Dial step | 1 minute | 1 s, 5 s, 15 s, 30 s, 1 min or 5 min per click |
+
+### Countdown to Date
+
+| Setting | Default | Notes |
+|---|---|---|
+| Count down to | A date & time | Or **A time every day**, which rings daily and then counts down to the next day |
+| Date and time | *(none)* | Quick picks: in 1 hour, tomorrow 09:00, New Year |
+| Time of day | *(none)* | Daily mode only |
+| Label | *(none)* | Up to 12 characters |
+| Flash / sound / repeat / sound file | Same as the timer | |
+| Count up after the date passes | On | Date mode only. Shows `+M:SS`, or `+Nd` over `HH:MM` |
+
+The key shows `--:--` until you pick a target. If the target passes while OpenDeck isn't running, the
+key shows it as done when it starts, without ringing late.
+
+### Stopwatch
+
+| Setting | Default | Notes |
+|---|---|---|
+| Label | *(none)* | Up to 12 characters |
 
 ## Requirements
 
@@ -119,8 +148,14 @@ node scripts/smoke-test.js
 ```
 
 The smoke test stands in for OpenDeck with a small WebSocket server. It starts the plugin through
-`run.sh` and runs it through start, pause, finish, hold-to-reset, settings changes, the dial,
-overtime and the touch-strip layout, all over the real Stream Deck SDK protocol.
+`run.sh` and exercises all three actions over the real Stream Deck SDK protocol:
+
+- **Timer:** start, pause, finish, hold-to-reset, settings changes, the dial, overtime and the
+  touch-strip layout.
+- **Date countdown:** ringing at the target, day-and-hour display, tapping to see the target, no
+  late alarm for a past date, daily mode and the unset state.
+- **Stopwatch:** counting, saving its state, ignoring a stale save from the settings panel,
+  restoring after a restart, and reset.
 
 **CI** runs on every push and pull request. It syntax-checks the JavaScript, validates the manifest
 and the files it points to, runs `shellcheck` on the shell scripts, and runs the smoke test.
@@ -151,10 +186,10 @@ as prereleases.
 
 ```
 dev.countdown.sdPlugin/     the plugin (this folder is what ships in the zip)
-  manifest.json             action, key and dial definition
+  manifest.json             the three actions, with key and dial definitions
   run.sh                    cleans up the launcher environment and finds Node
-  plugin.js                 timer logic and SVG rendering (keys and touch strip)
-  pi/timer.html             settings panel (property inspector)
+  plugin.js                 the three actions, alarm, SVG rendering (keys and touch strip)
+  pi/                       settings panels: timer, deadline, stopwatch + shared JS/CSS
   layouts/strip.json        touch-strip layout: one full-size image
   icons/                    SVG icons
 scripts/
@@ -172,5 +207,7 @@ scripts/
 - **The touch strip uses a custom layout.** The built-in `$A0` layout has a second image area that
   OpenDeck shows as a checkerboard when it's empty. It also falls back to the action name when the
   title is empty. A layout with a single full-size image avoids both.
-- **Timers are kept in memory.** Restarting OpenDeck resets any running timers, but the duration and
-  other settings are saved.
+- **What survives a restart.** Restarting OpenDeck resets a running countdown timer, but its
+  settings are kept. A date countdown is worked out from its target, so it's always correct. The
+  stopwatch saves its state in its settings. The plugin's in-memory copy wins over a save from the
+  settings panel, so an old value there can't stop or rewind a running stopwatch.

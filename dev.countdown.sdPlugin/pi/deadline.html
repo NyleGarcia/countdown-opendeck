@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Countdown to Date</title>
+<link rel="stylesheet" href="_shared.css" />
+<script src="_shared.js"></script>
+</head>
+<body>
+  <label>Count down to</label>
+  <div class="segmented" id="mode">
+    <button data-mode="date">A date &amp; time</button>
+    <button data-mode="daily">A time every day</button>
+  </div>
+
+  <div id="dateBox">
+    <label for="target">Date and time</label>
+    <input id="target" type="datetime-local" step="1" />
+    <div class="presets" id="quick">
+      <button data-min="60">In 1 hour</button>
+      <button data-tomorrow="9">Tomorrow 09:00</button>
+      <button data-newyear="1">New Year</button>
+    </div>
+  </div>
+  <div id="dailyBox" hidden>
+    <label for="time">Time of day</label>
+    <input id="time" type="time" step="1" />
+  </div>
+
+  <label for="label">Label <span class="muted">(optional, above the time)</span></label>
+  <input id="label" type="text" maxlength="12" placeholder="Launch" />
+
+  <hr />
+  <label class="check"><input id="flash" type="checkbox" /> Flash key when done</label>
+  <label class="check"><input id="sound" type="checkbox" /> Play sound when done</label>
+  <label class="check"><input id="repeatSound" type="checkbox" /> Repeat sound until dismissed</label>
+  <label class="check"><input id="overtime" type="checkbox" /> Count up after the date passes (+3:12)</label>
+
+  <label for="soundFile">Sound file</label>
+  <input id="soundFile" type="text" placeholder="/usr/share/sounds/freedesktop/stereo/alarm-clock-elapsed.oga" />
+  <div class="presets"><button id="test">Test sound</button></div>
+
+  <p class="hint">
+    More than a day away shows days, with hours:minutes underneath.<br />
+    Tap: show the target date. Tap while ringing: dismiss.<br />
+    Daily mode rings every day and then counts down to tomorrow.
+  </p>
+<script>
+const $ = (id) => document.getElementById(id);
+const pad = (n) => String(n).padStart(2, "0");
+const local = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+
+function fill(s) {
+  document.querySelectorAll("#mode button").forEach((b) => b.classList.toggle("on", b.dataset.mode === s.mode));
+  $("dateBox").hidden = s.mode !== "date";
+  $("dailyBox").hidden = s.mode !== "daily";
+  $("overtime").closest("label").hidden = s.mode !== "date";
+  $("target").value = s.target;
+  $("time").value = s.time;
+  PI.fillAlarm(s);
+}
+PI.init({ mode: "date", target: "", time: "", label: "", flash: true, sound: true,
+  repeatSound: false, overtime: true, soundFile: "" }, fill);
+PI.bindAlarm();
+
+// setAt marks when the target was chosen, so the ring can show progress since then.
+function setTarget(patch) { PI.save(Object.assign({ setAt: Date.now() }, patch)); fill(PI.settings); }
+
+$("mode").addEventListener("click", (e) => {
+  const mode = e.target.dataset && e.target.dataset.mode;
+  if (mode) setTarget({ mode });
+});
+$("target").addEventListener("change", () => {
+  let v = $("target").value;
+  if (/T\d\d:\d\d$/.test(v)) v += ":00";
+  setTarget({ target: v });
+});
+$("time").addEventListener("change", () => setTarget({ time: $("time").value }));
+$("quick").addEventListener("click", (e) => {
+  const b = e.target.dataset || {};
+  const d = new Date();
+  if (b.min) d.setMinutes(d.getMinutes() + Number(b.min), 0, 0);
+  else if (b.tomorrow) { d.setDate(d.getDate() + 1); d.setHours(Number(b.tomorrow), 0, 0, 0); }
+  else if (b.newyear) { d.setFullYear(d.getFullYear() + 1, 0, 1); d.setHours(0, 0, 0, 0); }
+  else return;
+  setTarget({ mode: "date", target: local(d) });
+});
+</script>
+</body>
+</html>

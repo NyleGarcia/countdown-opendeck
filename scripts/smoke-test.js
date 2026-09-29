@@ -45,10 +45,11 @@ const received = [];
 let sock;
 const send = (msg) => sock.write(frame(JSON.stringify(msg)));
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const last = (event) => [...received].reverse().find((m) => m.event === event);
+const last = (event, ctx) =>
+  [...received].reverse().find((m) => m.event === event && (!ctx || m.context === ctx));
 // The time is drawn into the image; the SVG carries it as data-time for tests.
-const shown = (event = "setImage", key = "image") => {
-  const m = last(event);
+const shown = (event = "setImage", key = "image", ctx) => {
+  const m = last(event, ctx);
   const svg = Buffer.from(m.payload[key].split(",")[1], "base64").toString();
   return svg.match(/data-time="([^"]*)"/)[1];
 };
@@ -140,11 +141,101 @@ server.listen(0, "127.0.0.1", async () => {
     assert.equal(lay?.payload.layout, "layouts/strip.json", "strip layout set");
     assert.equal(shown("setFeedback", "canvas"), "3:00", "strip shows time");
 
+    // ---- Countdown to date ----
+    const pad = (n) => String(n).padStart(2, "0");
+    const local = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T` +
+      `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+    const DL = "dl-1";
+    const now = Date.now();
+    send({ event: "willAppear", action: "dev.countdown.deadline", context: DL,
+      payload: { settings: { mode: "date", target: local(new Date(now + 2500)), setAt: now, sound: false,
+        overtime: false }, controller: "Keypad" } });
+    await sleep(150);
+    assert.match(shown("setImage", "image", DL), /^0:0[23]$/, "deadline counts down");
+    await sleep(2800);
+    assert.ok(received.some((m) => m.event === "showAlert" && m.context === DL), "deadline alerts");
+    assert.equal(shown("setImage", "image", DL), "0:00", "deadline shows zero");
+    send({ event: "keyDown", action: "dev.countdown.deadline", context: DL, payload: {} });
+    send({ event: "keyUp", action: "dev.countdown.deadline", context: DL, payload: {} });
+    await sleep(100);
+    assert.equal(shown("setImage", "image", DL), "0:00", "dismissed stays at zero without overtime");
+
+    // Far away: days over hours:minutes; tap peeks at the target
+    const far = new Date(now + 3 * 86400000 + 5 * 3600000 + 30 * 60000);
+    send({ event: "didReceiveSettings", action: "dev.countdown.deadline", context: DL,
+      payload: { settings: { mode: "date", target: local(far), sound: false } } });
+    await sleep(100);
+    assert.match(shown("setImage", "image", DL), /^3d 05:(29|30)$/, "days + hh:mm");
+    send({ event: "keyDown", action: "dev.countdown.deadline", context: DL, payload: {} });
+    send({ event: "keyUp", action: "dev.countdown.deadline", context: DL, payload: {} });
+    await sleep(100);
+    const peekSvg = Buffer.from(last("setImage", DL).payload.image.split(",")[1], "base64").toString();
+    assert.match(peekSvg, /(Sun|Mon|Tue|Wed|Thu|Fri|Sat) \d\d:\d\d</, "tap peeks at target");
+
+    // Past date with a fresh load: done, never rings late
+    const alertsBefore = received.filter((m) => m.event === "showAlert").length;
+    send({ event: "didReceiveSettings", action: "dev.countdown.deadline", context: DL,
+      payload: { settings: { mode: "date", target: local(new Date(now - 60000)), overtime: true } } });
+    await sleep(400);
+    assert.match(shown("setImage", "image", DL), /^\+\d+:\d\d$/, "past date counts up with overtime");
+    assert.equal(received.filter((m) => m.event === "showAlert").length, alertsBefore, "no late alarm");
+
+    // Daily mode: next occurrence is always in the future
+    const inOneMin = new Date(now + 90000);
+    send({ event: "didReceiveSettings", action: "dev.countdown.deadline", context: DL,
+      payload: { settings: { mode: "daily", time: `${pad(inOneMin.getHours())}:${pad(inOneMin.getMinutes())}:00` } } });
+    await sleep(100);
+    assert.match(shown("setImage", "image", DL), /^[01]:\d\d$/, "daily counts to today's time");
+
+    // Unconfigured
+    send({ event: "didReceiveSettings", action: "dev.countdown.deadline", context: DL,
+      payload: { settings: { mode: "date" } } });
+    await sleep(100);
+    assert.equal(shown("setImage", "image", DL), "--:--", "unset target");
+
+    // ---- Stopwatch ----
+    const SW = "sw-1";
+    send({ event: "willAppear", action: "dev.countdown.stopwatch", context: SW,
+      payload: { settings: {}, controller: "Keypad" } });
+    await sleep(100);
+    assert.equal(shown("setImage", "image", SW), "0:00", "stopwatch idle");
+    send({ event: "keyDown", action: "dev.countdown.stopwatch", context: SW, payload: {} });
+    send({ event: "keyUp", action: "dev.countdown.stopwatch", context: SW, payload: {} });
+    await sleep(1300);
+    assert.equal(shown("setImage", "image", SW), "0:01", "stopwatch counts up");
+    assert.equal(last("setSettings", SW).payload.swRunning, true, "running state persisted");
+
+    // A stale inspector save must not stop or rewind it
+    send({ event: "didReceiveSettings", action: "dev.countdown.stopwatch", context: SW,
+      payload: { settings: { label: "Lap", swRunning: false, swAccum: 0, swStart: 0 } } });
+    await sleep(900);
+    assert.equal(shown("setImage", "image", SW), "0:02", "stale settings ignored");
+    assert.equal(last("setSettings", SW).payload.label, "Lap", "label kept on re-save");
+
+    send({ event: "keyDown", action: "dev.countdown.stopwatch", context: SW, payload: {} });
+    send({ event: "keyUp", action: "dev.countdown.stopwatch", context: SW, payload: {} });
+    await sleep(100);
+    const saved = last("setSettings", SW).payload;
+    assert.equal(saved.swRunning, false, "pause persisted");
+    assert.ok(saved.swAccum >= 2000, "accumulated time persisted");
+
+    // Restart: a new plugin process restores from settings
+    send({ event: "willAppear", action: "dev.countdown.stopwatch", context: "sw-2",
+      payload: { settings: { swRunning: true, swStart: Date.now() - 65000, swAccum: 0 }, controller: "Keypad" } });
+    await sleep(100);
+    assert.equal(shown("setImage", "image", "sw-2"), "1:05", "restored after restart");
+
+    send({ event: "keyDown", action: "dev.countdown.stopwatch", context: SW, payload: {} });
+    await sleep(800);
+    send({ event: "keyUp", action: "dev.countdown.stopwatch", context: SW, payload: {} });
+    await sleep(100);
+    assert.equal(shown("setImage", "image", SW), "0:00", "hold resets stopwatch");
+
     console.log("smoke test: PASS");
   } catch (e) {
     failed = true;
     console.error("smoke test: FAIL -", e.message);
-    console.error(received.slice(-5));
+    console.error(received.slice(-8).map((m) => `${m.event} ${m.context || ""}`).join("\n"));
   } finally {
     sock?.destroy();
     await sleep(300);

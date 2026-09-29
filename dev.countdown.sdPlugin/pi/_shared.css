@@ -1,0 +1,27 @@
+:root { color-scheme: dark; }
+body {
+  font: 13px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+  color: #e9eef5; background: #1b1f26; margin: 0; padding: 14px;
+}
+label { display: block; margin: 10px 0 4px; color: #b6c0cf; font-weight: 600; }
+label.check { display: flex; gap: 8px; align-items: center; font-weight: 400; color: #e9eef5; margin: 6px 0; }
+label .muted { font-weight: 400; color: #8a94a6; }
+input[type=text], input[type=number], input[type=datetime-local], input[type=time], select {
+  width: 100%; box-sizing: border-box; padding: 6px 8px; border-radius: 6px;
+  border: 1px solid #38414f; background: #10141a; color: #e9eef5; font: inherit;
+}
+.row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.row span { display: block; color: #8a94a6; font-size: 11px; margin-top: 2px; text-align: center; }
+.segmented { display: flex; gap: 0; }
+.segmented button { flex: 1; border-radius: 0; }
+.segmented button:first-child { border-radius: 6px 0 0 6px; }
+.segmented button:last-child { border-radius: 0 6px 6px 0; }
+.segmented button.on { background: #3ba7f0; border-color: #3ba7f0; color: #0b0d10; font-weight: 600; }
+.presets { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+button {
+  padding: 5px 10px; border-radius: 6px; border: 1px solid #38414f;
+  background: #262c35; color: #e9eef5; font: inherit; cursor: pointer;
+}
+button:hover { background: #313946; }
+.hint { color: #8a94a6; margin: 12px 0 0; }
+hr { border: 0; border-top: 1px solid #2c333e; margin: 14px 0 4px; }

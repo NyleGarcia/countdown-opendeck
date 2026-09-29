@@ -1,6 +1,6 @@
 {
   "Name": "Countdown",
-  "Description": "Countdown timer with a configurable duration, progress ring, flashing alarm and sound.",
+  "Description": "Countdown timer, countdown to a date or daily time, and a stopwatch, with progress ring, flashing alarm and sound.",
   "Author": "Zedwil",
   "Version": "0.1.0",
   "Icon": "icons/plugin",
@@ -46,6 +46,62 @@
           "Touch": "Reset"
         },
         "StackColor": "#3ddc84"
+      }
+    },
+    {
+      "Name": "Countdown to Date",
+      "UUID": "dev.countdown.deadline",
+      "Icon": "icons/deadline",
+      "Tooltip": "Counts down to a date and time, or to a time every day. Tap to see the target; tap while ringing to dismiss.",
+      "Controllers": [
+        "Keypad",
+        "Encoder"
+      ],
+      "SupportedInMultiActions": false,
+      "DisableAutomaticStates": true,
+      "PropertyInspectorPath": "pi/deadline.html",
+      "States": [
+        {
+          "Image": "icons/key",
+          "Title": "",
+          "ShowTitle": false
+        }
+      ],
+      "Encoder": {
+        "layout": "layouts/strip.json",
+        "StackColor": "#3ddc84",
+        "TriggerDescription": {
+          "Push": "Show target / dismiss",
+          "Touch": "Show target / dismiss"
+        }
+      }
+    },
+    {
+      "Name": "Stopwatch",
+      "UUID": "dev.countdown.stopwatch",
+      "Icon": "icons/stopwatch",
+      "Tooltip": "Tap to start/pause, hold to reset. Keeps running across page changes and restarts.",
+      "Controllers": [
+        "Keypad",
+        "Encoder"
+      ],
+      "SupportedInMultiActions": false,
+      "DisableAutomaticStates": true,
+      "PropertyInspectorPath": "pi/stopwatch.html",
+      "States": [
+        {
+          "Image": "icons/key",
+          "Title": "",
+          "ShowTitle": false
+        }
+      ],
+      "Encoder": {
+        "layout": "layouts/strip.json",
+        "StackColor": "#3ba7f0",
+        "TriggerDescription": {
+          "Push": "Start / pause",
+          "Touch": "Reset"
+        }
       }
     }
   ]
