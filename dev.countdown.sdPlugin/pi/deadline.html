@@ -37,13 +37,24 @@
   <label class="check"><input id="repeatSound" type="checkbox" /> Repeat sound until dismissed</label>
   <label class="check"><input id="overtime" type="checkbox" /> Count up after the date passes (+3:12)</label>
 
+  <label class="check"><input id="notify" type="checkbox" /> Desktop notification</label>
+
+  <label for="snooze">Snooze <span class="muted">(hold the key while it rings)</span></label>
+  <select id="snooze">
+    <option value="0">Off (hold dismisses)</option>
+    <option value="60">1 minute</option>
+    <option value="300">5 minutes</option>
+    <option value="600">10 minutes</option>
+    <option value="900">15 minutes</option>
+  </select>
+
   <label for="soundFile">Sound file</label>
   <input id="soundFile" type="text" placeholder="/usr/share/sounds/freedesktop/stereo/alarm-clock-elapsed.oga" />
-  <div class="presets"><button id="test">Test sound</button></div>
+  <div class="presets"><button id="test">Test sound</button><button id="testNotify">Test notification</button></div>
 
   <p class="hint">
     More than a day away shows days, with hours:minutes underneath.<br />
-    Tap: show the target date. Tap while ringing: dismiss.<br />
+    Tap: show the target date. Tap while ringing: dismiss. Hold while ringing: snooze.<br />
     Daily mode rings every day and then counts down to tomorrow.
   </p>
 <script>
@@ -61,7 +72,7 @@ function fill(s) {
   PI.fillAlarm(s);
 }
 PI.init({ mode: "date", target: "", time: "", label: "", flash: true, sound: true,
-  repeatSound: false, overtime: true, soundFile: "" }, fill);
+  repeatSound: false, notify: true, snooze: 300, overtime: true, soundFile: "" }, fill);
 PI.bindAlarm();
 
 // setAt marks when the target was chosen, so the ring can show progress since then.

@@ -9,17 +9,72 @@
 </head>
 <body>
   <label for="label">Label <span class="muted">(optional, above the time)</span></label>
-  <input id="label" type="text" maxlength="12" placeholder="Lap" />
+  <input id="label" type="text" maxlength="12" placeholder="Run" />
+
+  <label class="check"><input id="lapMode" type="checkbox" /> Lap mode</label>
+  <p class="hint" id="hintPlain">
+    Tap: start / pause. Hold: reset.<br />
+    On a dial: press to start / pause, touch the strip to reset.
+  </p>
+  <p class="hint" id="hintLap" hidden>
+    Tap: start, then tap for each lap. Hold: pause, then hold again to reset.<br />
+    The key shows the current lap with the total underneath. On a dial: press = lap,
+    touch = pause / reset, turn to scroll back through laps.
+  </p>
+
+  <div id="lapBox" hidden>
+    <label>Laps</label>
+    <table id="laps"></table>
+    <p class="hint" id="noLaps">No laps yet.</p>
+  </div>
 
   <p class="hint">
-    Tap: start / pause. Hold: reset.<br />
-    On a dial: press to start / pause, touch the strip to reset.<br />
     The ring sweeps once a minute. The stopwatch keeps running across page changes and
     OpenDeck restarts.
   </p>
+<style>
+#laps { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+#laps td { padding: 3px 6px; border-bottom: 1px solid #2c333e; }
+#laps td:last-child { text-align: right; }
+#laps tr.best td { color: #3ddc84; }
+#laps tr.worst td { color: #ffb020; }
+</style>
 <script>
-PI.init({ label: "" }, (s) => PI.fillAlarm(s));
+const $ = (id) => document.getElementById(id);
+function fmt(ms) {
+  const t = Math.floor(ms / 100), s = Math.floor(t / 10);
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
+  const p = (n) => String(n).padStart(2, "0");
+  return (h ? `${h}:${p(m)}:${p(sec)}` : `${m}:${p(sec)}`) + `.${t % 10}`;
+}
+function showLaps(laps) {
+  const table = $("laps");
+  table.textContent = "";
+  $("noLaps").hidden = Array.isArray(laps) && laps.length > 0;
+  if (!Array.isArray(laps) || !laps.length) return;
+  const best = Math.min(...laps), worst = Math.max(...laps);
+  laps.map((ms, i) => ({ ms, i })).reverse().forEach(({ ms, i }) => {
+    const tr = document.createElement("tr");
+    if (laps.length > 1 && ms === best) tr.className = "best";
+    else if (laps.length > 1 && ms === worst) tr.className = "worst";
+    const a = document.createElement("td"); a.textContent = `Lap ${i + 1}`;
+    const b = document.createElement("td"); b.textContent = fmt(ms);
+    tr.append(a, b);
+    table.append(tr);
+  });
+}
+function fill(s) {
+  PI.fillAlarm(s);
+  $("lapMode").checked = !!s.lapMode;
+  $("hintPlain").hidden = !!s.lapMode;
+  $("hintLap").hidden = $("lapBox").hidden = !s.lapMode;
+}
+PI.init({ label: "", lapMode: false }, fill);
 PI.bindAlarm();
+$("lapMode").addEventListener("change", () => { PI.save({ lapMode: $("lapMode").checked }); fill(PI.settings); });
+PI.onMessage((p) => { if (Array.isArray(p.laps)) showLaps(p.laps); });
+PI.onConnect(() => PI.send({ command: "laps" }));
+showLaps([]);
 </script>
 </body>
 </html>

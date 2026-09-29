@@ -5,11 +5,17 @@
 // Deadline  counts down to a date/time (or a time every day). Tap = peek at the target,
 //           or dismiss while ringing.
 // Stopwatch tap = start / pause, hold = reset. State survives OpenDeck restarts.
+// Pomodoro  focus / short break cycles with a long break every N rounds. Tap = start / pause,
+//           hold = restart the cycle, touch strip = skip to the next phase.
+//
+// Any ringing alarm: tap = dismiss, hold (or touch the strip) = snooze. A desktop
+// notification carries the same Dismiss / Snooze buttons.
 //
 // Zero dependencies: Node >= 22 ships a global WebSocket client.
 
 const { spawn } = require("node:child_process");
 const fs = require("node:fs");
+const path = require("node:path");
 
 const HOLD_MS = 600;
 const TICK_MS = 200;
@@ -38,10 +44,12 @@ function num(v, fallback, max) {
 const bool = (v, fallback) => (typeof v === "boolean" ? v : fallback);
 const str = (v, max) => (typeof v === "string" ? v.slice(0, max) : "");
 
-// Label + alarm options shared by the timer and the deadline.
+// Label + alarm options shared by every action that rings.
 function alarmSettings(s, overtimeDefault) {
   return {
     label: str(s.label, 12),
+    snooze: num(s.snooze, 300, 3600), // seconds; 0 = hold dismisses instead
+    notify: bool(s.notify, true),
     sound: bool(s.sound, true),
     soundFile: typeof s.soundFile === "string" && s.soundFile ? s.soundFile : DEFAULT_SOUND,
     repeatSound: bool(s.repeatSound, false),
@@ -91,16 +99,102 @@ function describeTarget(at, now) {
 
 // ---------- shared alarm ----------
 
-function finish(context, t) {
+// Ring: sound, key alert and a desktop notification with Dismiss / Snooze buttons.
+// `message` is { title, body }; kept so a snooze can ring again with the same words.
+function finish(context, t, message) {
+  if (message) t.message = message;
   t.ringing = true;
+  t.alarmGen = (t.alarmGen || 0) + 1;
   if (t.settings.sound) playSound(t);
   if (t.visible) send({ event: "showAlert", context });
+  if (t.settings.notify) notify(context, t, t.message, true);
   log("finished", context);
+}
+
+// A one-shot heads-up that does not ring (pomodoro auto-advance).
+function announce(context, t, message) {
+  if (t.settings.sound) playSound(t);
+  if (t.visible) send({ event: "showAlert", context });
+  if (t.settings.notify) notify(context, t, message, false);
 }
 
 function silence(t) {
   stopSound(t);
+  closeNotification(t);
   t.ringing = false;
+}
+
+const alerting = (t) => t.ringing || t.snoozeUntil > 0;
+
+function dismiss(context, t, now) {
+  t.snoozeUntil = 0;
+  silence(t);
+  KINDS[t.kind].dismiss(context, t, now);
+}
+
+// Returns false when snooze is off, so the caller can dismiss instead.
+function snooze(context, t, now) {
+  const ms = t.settings.snooze * 1000;
+  if (!ms) return false;
+  silence(t);
+  t.snoozeUntil = now + ms;
+  t.snoozeLen = ms;
+  return true;
+}
+
+// ---------- desktop notifications ----------
+
+// COUNTDOWN_NOTIFY_CMD swaps notify-send for a stand-in (the smoke test uses one).
+const NOTIFY_CMD = process.env.COUNTDOWN_NOTIFY_CMD || "/usr/bin/notify-send";
+const REAL_NOTIFY = !process.env.COUNTDOWN_NOTIFY_CMD;
+const ICON = path.join(__dirname, "icons", "plugin.svg");
+
+function notify(context, t, message, withActions) {
+  if (!message || !fs.existsSync(NOTIFY_CMD)) return;
+  closeNotification(t);
+  const argv = ["-a", "Countdown", "-i", ICON, "-p"];
+  if (withActions) {
+    argv.push("-u", "critical", "-A", "dismiss=Dismiss");
+    if (t.settings.snooze) argv.push("-A", `snooze=Snooze ${Math.round(t.settings.snooze / 60) || 1} min`);
+  } else {
+    argv.push("-e");
+  }
+  argv.push(message.title, message.body || "");
+  const proc = spawn(NOTIFY_CMD, argv, { stdio: ["ignore", "pipe", "ignore"] });
+  const gen = t.alarmGen;
+  t.notifyProc = proc;
+  let buf = "";
+  proc.stdout.on("data", (chunk) => {
+    buf += chunk;
+    let nl;
+    while ((nl = buf.indexOf("\n")) >= 0) {
+      const line = buf.slice(0, nl).trim();
+      buf = buf.slice(nl + 1);
+      if (/^\d+$/.test(line)) { if (t.notifyProc === proc) t.notifyId = line; continue; }
+      // A button press from the notification; ignore it if the alarm moved on meanwhile.
+      if (gen !== t.alarmGen || !t.ringing) continue;
+      if (line === "dismiss") dismiss(context, t, Date.now());
+      else if (line === "snooze" && !snooze(context, t, Date.now())) dismiss(context, t, Date.now());
+      else continue;
+      render(context, t, true);
+    }
+  });
+  proc.on("error", (e) => log("notify error", e.message));
+  proc.on("exit", () => { if (t.notifyProc === proc) t.notifyProc = null; });
+}
+
+function closeNotification(t) {
+  const proc = t.notifyProc;
+  const id = t.notifyId;
+  t.notifyProc = null;
+  t.notifyId = null;
+  if (proc) proc.kill();
+  if (id && REAL_NOTIFY) {
+    spawn("/usr/bin/gdbus", ["call", "--session", "--dest", "org.freedesktop.Notifications",
+      "--object-path", "/org/freedesktop/Notifications",
+      "--method", "org.freedesktop.Notifications.CloseNotification", id], { stdio: "ignore" })
+      .on("error", () => {});
+  }
 }
 
 function playSound(t) {
@@ -176,10 +270,10 @@ const timer = {
     t.remaining = t.total;
   },
   toggle(context, t, now) {
-    if (t.ringing) return timer.reset(context, t);
     if (t.running) timer.pause(t, now);
     else timer.start(t, now);
   },
+  dismiss: (c, t) => timer.reset(c, t),
   press: (c, t, now) => timer.toggle(c, t, now),
   hold: (c, t) => { timer.reset(c, t); return true; },
   dialDown: (c, t, now) => timer.toggle(c, t, now),
@@ -200,7 +294,7 @@ const timer = {
   },
   tick(context, t, now) {
     if (!t.running || t.ringing || t.endAt > now) return;
-    finish(context, t);
+    finish(context, t, { title: t.settings.label || "Timer", body: `${clock(t.total / 1000)} timer finished` });
     if (!t.settings.overtime) {
       t.running = false;
       t.remaining = 0;
@@ -263,17 +357,23 @@ const deadline = {
     // A target already in the past (e.g. OpenDeck was off) shows as done; it never rings late.
     t.fired = t.at === null || t.at <= now;
   },
-  dismissOrPeek(context, t, now) {
-    if (t.ringing) silence(t);
-    else t.peekUntil = now + PEEK_MS;
+  peek(context, t, now) {
+    t.peekUntil = now + PEEK_MS;
   },
-  press: (c, t, now) => deadline.dismissOrPeek(c, t, now),
-  hold: (c, t, now) => { deadline.dismissOrPeek(c, t, now); return false; },
-  dialDown: (c, t, now) => deadline.dismissOrPeek(c, t, now),
-  touch: (c, t, now) => deadline.dismissOrPeek(c, t, now),
+  dismiss() {},
+  press: (c, t, now) => deadline.peek(c, t, now),
+  hold: (c, t, now) => { deadline.peek(c, t, now); return false; },
+  dialDown: (c, t, now) => deadline.peek(c, t, now),
+  touch: (c, t, now) => deadline.peek(c, t, now),
   tick(context, t, now) {
     if (t.fired || t.at === null || now < t.at) return;
-    finish(context, t);
+    const at = new Date(t.at);
+    finish(context, t, {
+      title: t.settings.label || "Countdown",
+      body: t.settings.mode === "daily"
+        ? `It's ${pad(at.getHours())}:${pad(at.getMinutes())}`
+        : `Reached ${describeTarget(t.at, t.at - 1)}`,
+    });
     t.fired = true;
     if (t.settings.mode === "daily") {
       t.at = deadline.compute(t.settings, now + 1000);
@@ -313,68 +413,246 @@ const deadline = {
 
 // ---------- kind: stopwatch ----------
 
-// Running state lives in settings (swAccum / swStart / swRunning) so it survives an
-// OpenDeck restart. In memory it is authoritative: a settings save from the inspector
+// Running state lives in settings (swAccum / swStart / swRunning / swLaps) so it survives
+// an OpenDeck restart. In memory it is authoritative: a settings save from the inspector
 // carries the values it loaded, which may be stale by now.
+//
+// Lap mode: tap = start / lap, hold = pause (running) or reset (stopped), dial rotate =
+// scroll back through laps. swLaps holds the elapsed time at each lap.
+const MAX_LAPS = 99;
+
 const stopwatch = {
   normalize(s = {}) {
     const n = (v) => (Number.isFinite(Number(v)) && Number(v) >= 0 ? Number(v) : 0);
     return {
       label: str(s.label, 12),
+      lapMode: bool(s.lapMode, false),
       swAccum: n(s.swAccum),
       swStart: n(s.swStart),
       swRunning: s.swRunning === true,
+      swLaps: Array.isArray(s.swLaps) ? s.swLaps.map(n).slice(-MAX_LAPS) : [],
     };
   },
   init(t) {
     t.sw = null;
+    t.lapShowUntil = 0;
+    t.browseUntil = 0;
+    t.browse = 0;
   },
+  snapshot: (t) => ({ swAccum: t.sw.accum, swStart: t.sw.start, swRunning: t.sw.running, swLaps: t.sw.laps }),
   apply(t, raw, now, context) {
     const incoming = stopwatch.normalize(raw);
     if (!t.sw) {
-      t.sw = { accum: incoming.swAccum, start: incoming.swStart, running: incoming.swRunning };
-      if (t.sw.running && (!t.sw.start || t.sw.start > now)) t.sw = { accum: 0, start: 0, running: false };
+      t.sw = { accum: incoming.swAccum, start: incoming.swStart, running: incoming.swRunning,
+        laps: incoming.swLaps };
+      if (t.sw.running && (!t.sw.start || t.sw.start > now)) t.sw = { accum: 0, start: 0, running: false, laps: [] };
     }
-    t.settings = { ...incoming, swAccum: t.sw.accum, swStart: t.sw.start, swRunning: t.sw.running };
+    t.settings = { ...incoming, ...stopwatch.snapshot(t) };
     const stale = incoming.swAccum !== t.sw.accum || incoming.swStart !== t.sw.start ||
-      incoming.swRunning !== t.sw.running;
+      incoming.swRunning !== t.sw.running || JSON.stringify(incoming.swLaps) !== JSON.stringify(t.sw.laps);
     if (stale && context) saveSettings(context, t);
   },
   elapsed: (t, now) => t.sw.accum + (t.sw.running ? now - t.sw.start : 0),
+  // Lap durations, oldest first.
+  lapTimes: (t) => t.sw.laps.map((at, i) => at - (i ? t.sw.laps[i - 1] : 0)),
   persist(context, t) {
-    Object.assign(t.settings, { swAccum: t.sw.accum, swStart: t.sw.start, swRunning: t.sw.running });
+    Object.assign(t.settings, stopwatch.snapshot(t));
     saveSettings(context, t);
+    send({ event: "sendToPropertyInspector", context, payload: { laps: stopwatch.lapTimes(t) } });
   },
   toggle(context, t, now) {
-    if (t.sw.running) t.sw = { accum: stopwatch.elapsed(t, now), start: 0, running: false };
-    else t.sw = { accum: t.sw.accum, start: now, running: true };
+    if (t.sw.running) t.sw = { ...t.sw, accum: stopwatch.elapsed(t, now), start: 0, running: false };
+    else t.sw = { ...t.sw, start: now, running: true };
+    stopwatch.persist(context, t);
+  },
+  lap(context, t, now) {
+    const laps = [...t.sw.laps, stopwatch.elapsed(t, now)].slice(-MAX_LAPS);
+    t.sw = { ...t.sw, laps };
+    t.lapShowUntil = now + PEEK_MS;
+    t.browseUntil = 0;
     stopwatch.persist(context, t);
   },
   reset(context, t) {
-    t.sw = { accum: 0, start: 0, running: false };
+    t.sw = { accum: 0, start: 0, running: false, laps: [] };
+    t.lapShowUntil = t.browseUntil = 0;
     stopwatch.persist(context, t);
   },
-  press: (c, t, now) => stopwatch.toggle(c, t, now),
-  hold: (c, t) => { stopwatch.reset(c, t); return true; },
-  dialDown: (c, t, now) => stopwatch.toggle(c, t, now),
-  touch: (c, t) => stopwatch.reset(c, t),
-  active: (t) => t.sw.running,
+  dismiss() {},
+  press(c, t, now) {
+    if (t.settings.lapMode && t.sw.running) stopwatch.lap(c, t, now);
+    else stopwatch.toggle(c, t, now);
+  },
+  hold(c, t, now) {
+    if (t.settings.lapMode && t.sw.running) stopwatch.toggle(c, t, now);
+    else stopwatch.reset(c, t);
+    return true;
+  },
+  dialDown: (c, t, now) => stopwatch.press(c, t, now),
+  touch: (c, t, now) => stopwatch.hold(c, t, now),
+  rotate(context, t, ticks) {
+    const n = t.sw.laps.length;
+    if (!t.settings.lapMode || !n) return;
+    const now = Date.now();
+    const from = now < t.browseUntil ? t.browse : n; // first turn back lands on the last lap
+    t.browse = Math.max(0, Math.min(n - 1, from + ticks));
+    t.browseUntil = now + PEEK_MS * 2;
+  },
+  active: (t) => t.sw.running || t.lapShowUntil > 0 || t.browseUntil > 0,
   view(t, now) {
     const el = stopwatch.elapsed(t, now);
-    return {
-      main: clock(Math.floor(el / 1000)),
+    const base = {
       sub: "",
-      // One sweep of the ring per minute, like a second hand.
-      frac: el > 0 ? (el % 60000) / 60000 : 0,
       state: t.sw.running ? "active" : "idle",
       arc: "#3ba7f0",
-      label: t.settings.label,
       paused: !t.sw.running && el > 0,
+    };
+    if (!t.settings.lapMode) {
+      // One sweep of the ring per minute, like a second hand.
+      return { ...base, main: clock(Math.floor(el / 1000)), frac: el > 0 ? (el % 60000) / 60000 : 0,
+        label: t.settings.label };
+    }
+    // Expire the temporary lap displays so `active` stops forcing redraws.
+    if (t.lapShowUntil && now >= t.lapShowUntil) t.lapShowUntil = 0;
+    if (t.browseUntil && now >= t.browseUntil) t.browseUntil = 0;
+    const laps = stopwatch.lapTimes(t);
+    const n = laps.length;
+    if (t.browseUntil && n) {
+      const i = Math.min(t.browse, n - 1);
+      return { ...base, main: tenths(laps[i]), frac: 1, arc: lapColor(laps, i), state: "active",
+        label: `Lap ${i + 1}/${n}` };
+    }
+    if (t.lapShowUntil && n) {
+      return { ...base, main: tenths(laps[n - 1]), sub: clock(Math.floor(el / 1000)), frac: 1,
+        arc: lapColor(laps, n - 1), state: "active", label: `Lap ${n}` };
+    }
+    const current = el - (n ? t.sw.laps[n - 1] : 0);
+    return {
+      ...base,
+      main: clock(Math.floor(current / 1000)),
+      sub: n ? clock(Math.floor(el / 1000)) : "",
+      frac: current > 0 ? (current % 60000) / 60000 : 0,
+      label: `Lap ${n + 1}`,
     };
   },
 };
 
-const KINDS = { timer, deadline, stopwatch };
+// M:SS.t (or H:MM:SS past an hour) for finished laps, where tenths matter.
+function tenths(ms) {
+  if (ms >= 3600000) return clock(Math.floor(ms / 1000));
+  const t = Math.floor(ms / 100);
+  return `${clock(Math.floor(t / 10))}.${t % 10}`;
+}
+
+// Fastest lap green, slowest amber, others blue (only once there is something to compare).
+function lapColor(laps, i) {
+  if (laps.length < 2) return "#3ba7f0";
+  if (laps[i] === Math.min(...laps)) return "#3ddc84";
+  if (laps[i] === Math.max(...laps)) return "#ffb020";
+  return "#3ba7f0";
+}
+
+// ---------- kind: pomodoro ----------
+
+const PHASES = {
+  work: { label: (t) => `Focus ${t.round}/${t.settings.rounds}`, arc: "#ff6b5b", key: "work" },
+  short: { label: () => "Break", arc: "#3ddc84", key: "shortBreak" },
+  long: { label: () => "Long break", arc: "#3ba7f0", key: "longBreak" },
+};
+
+const pomodoro = {
+  normalize(s = {}) {
+    // Durations in seconds; the settings panel edits minutes.
+    return {
+      work: num(s.work, 1500, 10800) || 1500,
+      shortBreak: num(s.shortBreak, 300, 3600) || 300,
+      longBreak: num(s.longBreak, 900, 3600) || 900,
+      rounds: Math.max(1, num(s.rounds, 4, 12)),
+      autoStart: bool(s.autoStart, false),
+      ...alarmSettings(s, false),
+    };
+  },
+  phaseMs: (t, phase = t.phase) => t.settings[PHASES[phase].key] * 1000,
+  init(t) {
+    t.phase = "work";
+    t.round = 1;
+    t.running = false;
+    t.endAt = 0;
+    t.remaining = t.phaseTotal = pomodoro.phaseMs(t);
+  },
+  apply(t, raw) {
+    const fresh = !t.running && !t.ringing && t.remaining === t.phaseTotal;
+    t.settings = pomodoro.normalize(raw);
+    if (t.round > t.settings.rounds) t.round = t.settings.rounds;
+    // Like the timer: an untouched phase takes the new length now, a started one keeps going.
+    if (fresh) t.remaining = t.phaseTotal = pomodoro.phaseMs(t);
+  },
+  remaining: (t, now) => (t.running ? t.endAt - now : t.remaining),
+  start(t, now) {
+    t.endAt = now + t.remaining;
+    t.running = true;
+  },
+  advance(t) {
+    if (t.phase === "work") t.phase = t.round >= t.settings.rounds ? "long" : "short";
+    else {
+      t.round = t.phase === "long" ? 1 : t.round + 1;
+      t.phase = "work";
+    }
+    t.remaining = t.phaseTotal = pomodoro.phaseMs(t);
+  },
+  message(t) {
+    if (t.phase !== "work") return { title: "Pomodoro", body: "Break over. Back to focus." };
+    const next = t.round >= t.settings.rounds ? "long" : "short";
+    const mins = Math.round(pomodoro.phaseMs(t, next) / 60000);
+    return { title: "Pomodoro", body: `Focus ${t.round} done. Take a ${mins} min ${next === "long" ? "long " : ""}break.` };
+  },
+  toggle(context, t, now) {
+    if (t.running) { t.remaining = Math.max(0, t.endAt - now); t.running = false; }
+    else pomodoro.start(t, now);
+  },
+  // Tap on a finished phase: go straight into the next one.
+  dismiss(context, t, now) {
+    pomodoro.advance(t);
+    pomodoro.start(t, now);
+  },
+  press: (c, t, now) => pomodoro.toggle(c, t, now),
+  hold: (c, t) => { pomodoro.init(t); return true; },
+  dialDown: (c, t, now) => pomodoro.toggle(c, t, now),
+  touch(context, t, now) {
+    const wasRunning = t.running;
+    t.running = false;
+    pomodoro.advance(t);
+    if (wasRunning) pomodoro.start(t, now);
+  },
+  tick(context, t, now) {
+    if (!t.running || t.ringing || t.endAt > now) return;
+    const message = pomodoro.message(t);
+    if (t.settings.autoStart) {
+      pomodoro.advance(t);
+      pomodoro.start(t, now);
+      announce(context, t, message);
+    } else {
+      t.running = false;
+      t.remaining = 0;
+      finish(context, t, message);
+    }
+  },
+  active: (t) => t.running,
+  view(t, now) {
+    const ms = pomodoro.remaining(t, now);
+    const ph = PHASES[t.phase];
+    return {
+      main: t.ringing ? "0:00" : fmt(ms),
+      sub: "",
+      frac: t.phaseTotal > 0 ? Math.max(0, Math.min(1, ms / t.phaseTotal)) : 0,
+      state: t.running ? "active" : "idle",
+      arc: ph.arc,
+      label: ph.label(t),
+      paused: !t.running && !t.ringing && t.remaining < t.phaseTotal && t.remaining > 0,
+    };
+  },
+};
+
+const KINDS = { timer, deadline, stopwatch, pomodoro };
 
 function kindOf(action) {
   const k = String(action || "").split(".").pop();
@@ -393,6 +671,7 @@ function get(context, kind = "timer") {
     t = {
       kind, settings: KINDS[kind].normalize(), visible: false, controller: "Keypad",
       ringing: false, flashOn: false, soundProc: null, pressedAt: 0, holdTimer: null,
+      snoozeUntil: 0, snoozeLen: 0, notifyProc: null, notifyId: null, alarmGen: 0, message: null,
       lastImage: null, lastStrip: null,
     };
     KINDS[kind].init(t);
@@ -421,7 +700,7 @@ const DIGIT_ASPECT = 0.56; // width / height
 const THICK = 0.15; // stroke / height
 
 function glyphWidth(ch, h) {
-  if (ch === ":") return h * THICK * 2.2;
+  if (ch === ":" || ch === ".") return h * THICK * 2.2;
   if (ch === "+") return h * DIGIT_ASPECT * 0.8;
   if (ch === " ") return h * DIGIT_ASPECT * 0.4;
   if (ch === "1") return h * THICK; // just the right-hand bars, so "10:00" stays centred
@@ -472,6 +751,9 @@ function drawDigits(s, cx, cy, maxW, maxH, lit) {
       const dx = (x + (gw - th) / 2).toFixed(2);
       out += `<rect x="${dx}" y="${(y + h * 0.26).toFixed(2)}" width="${th.toFixed(2)}" height="${th.toFixed(2)}" rx="${(th / 3).toFixed(2)}" fill="${lit}"/>`;
       out += `<rect x="${dx}" y="${(y + h * 0.64).toFixed(2)}" width="${th.toFixed(2)}" height="${th.toFixed(2)}" rx="${(th / 3).toFixed(2)}" fill="${lit}"/>`;
+    } else if (ch === ".") {
+      const dx = (x + (gw - th) / 2).toFixed(2);
+      out += `<rect x="${dx}" y="${(y + h - th).toFixed(2)}" width="${th.toFixed(2)}" height="${th.toFixed(2)}" rx="${(th / 3).toFixed(2)}" fill="${lit}"/>`;
     } else if (ch === "+") {
       const len = gw;
       const my = y + h / 2;
@@ -567,9 +849,19 @@ function stripImage(view, t) {
   return svgWrap(200, 100, shownText(view), body);
 }
 
+// While snoozed, every kind shows the same thing: time until it rings again.
+function viewOf(t, now) {
+  if (t.snoozeUntil > 0) {
+    const ms = Math.max(0, t.snoozeUntil - now);
+    return { main: fmt(ms), sub: "", frac: ms / t.snoozeLen, state: "active", arc: "#b58cff",
+      label: "Snoozed", paused: false };
+  }
+  return KINDS[t.kind].view(t, now);
+}
+
 function render(context, t, force = false) {
   if (!t.visible) return;
-  const view = KINDS[t.kind].view(t, Date.now());
+  const view = viewOf(t, Date.now());
   if (force) send({ event: "setTitle", context, payload: { title: "", target: 0 } });
   // Encoders get both: the strip is what the hardware shows, the key image is what
   // OpenDeck's editor draws for the dial.
@@ -595,11 +887,16 @@ setInterval(() => {
   if (flip) flashAt = now;
   for (const [context, t] of instances) {
     const k = KINDS[t.kind];
-    if (k.tick) k.tick(context, t, now);
+    if (t.snoozeUntil > 0 && now >= t.snoozeUntil) {
+      t.snoozeUntil = 0;
+      finish(context, t);
+    } else if (k.tick && !t.snoozeUntil) {
+      k.tick(context, t, now);
+    }
     if (t.ringing && flip) t.flashOn = !t.flashOn;
-    if (k.active(t) || t.ringing) render(context, t);
+    if (k.active(t) || alerting(t)) render(context, t);
   }
-}, TICK_MS);
+}, TICK_MS).unref(); // the socket keeps the process alive; tests can require() this file
 
 // ---------- socket ----------
 
@@ -618,7 +915,11 @@ function onKeyDown(context, t) {
   t.holdTimer = setTimeout(() => {
     t.holdTimer = null;
     t.pressedAt = 0;
-    const ok = KINDS[t.kind].hold(context, t, Date.now());
+    const now = Date.now();
+    let ok;
+    if (t.ringing) ok = snooze(context, t, now) || (dismiss(context, t, now), true);
+    else if (t.snoozeUntil) ok = (dismiss(context, t, now), true);
+    else ok = KINDS[t.kind].hold(context, t, now);
     render(context, t, true);
     if (ok) send({ event: "showOk", context });
   }, HOLD_MS);
@@ -629,7 +930,9 @@ function onKeyUp(context, t) {
   clearTimeout(t.holdTimer);
   t.holdTimer = null;
   t.pressedAt = 0;
-  KINDS[t.kind].press(context, t, Date.now());
+  const now = Date.now();
+  if (alerting(t)) dismiss(context, t, now);
+  else KINDS[t.kind].press(context, t, now);
   render(context, t, true);
 }
 
@@ -670,11 +973,14 @@ function handle(msg) {
       onKeyUp(context, t);
       break;
     case "dialDown":
-      k.dialDown(context, t, now);
+      if (alerting(t)) dismiss(context, t, now);
+      else k.dialDown(context, t, now);
       render(context, t, true);
       break;
     case "touchTap":
-      k.touch(context, t, now);
+      if (t.ringing) { if (!snooze(context, t, now)) dismiss(context, t, now); }
+      else if (t.snoozeUntil) dismiss(context, t, now);
+      else k.touch(context, t, now);
       render(context, t, true);
       break;
     case "dialRotate":
@@ -683,6 +989,13 @@ function handle(msg) {
     case "sendToPlugin":
       if (payload.command === "testSound" && t.settings.soundFile) {
         playSound({ settings: t.settings, ringing: false, soundProc: null });
+      }
+      if (payload.command === "laps" && t.kind === "stopwatch" && t.sw) {
+        send({ event: "sendToPropertyInspector", context, payload: { laps: stopwatch.lapTimes(t) } });
+      }
+      if (payload.command === "testNotify") {
+        notify(context, { settings: t.settings }, {
+          title: t.settings.label || "Countdown", body: "This is how the alarm notification looks." }, false);
       }
       break;
   }
@@ -706,7 +1019,7 @@ function connect() {
   });
   // OpenDeck owns our lifetime: when it goes, we go.
   ws.addEventListener("close", () => {
-    for (const t of instances.values()) stopSound(t);
+    for (const t of instances.values()) { stopSound(t); closeNotification(t); }
     process.exit(0);
   });
   ws.addEventListener("error", (e) => log("ws error", e.message || e));
@@ -714,4 +1027,7 @@ function connect() {
 
 if (require.main === module) connect();
 
-module.exports = { KINDS, get, fmt, span, clock, describeTarget, keyImage, stripImage, instances };
+module.exports = {
+  KINDS, get, fmt, span, clock, tenths, lapColor, describeTarget, keyImage, stripImage, viewOf,
+  handle, dismiss, snooze, alerting, instances, outbox: queue,
+};

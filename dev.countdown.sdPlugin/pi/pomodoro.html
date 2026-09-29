@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Pomodoro</title>
+<link rel="stylesheet" href="_shared.css" />
+<script src="_shared.js"></script>
+</head>
+<body>
+  <label>Lengths <span class="muted">(minutes)</span></label>
+  <div class="row">
+    <div><input id="work" type="number" min="1" max="180" /><span>focus</span></div>
+    <div><input id="shortBreak" type="number" min="1" max="60" /><span>break</span></div>
+    <div><input id="longBreak" type="number" min="1" max="60" /><span>long break</span></div>
+  </div>
+  <div class="presets" id="presets">
+    <button data-p="25,5,15">25 / 5 / 15</button>
+    <button data-p="50,10,30">50 / 10 / 30</button>
+    <button data-p="90,20,30">90 / 20 / 30</button>
+  </div>
+
+  <label for="rounds">Long break after</label>
+  <select id="rounds">
+    <option value="2">2 focus rounds</option>
+    <option value="3">3 focus rounds</option>
+    <option value="4">4 focus rounds</option>
+    <option value="5">5 focus rounds</option>
+    <option value="6">6 focus rounds</option>
+  </select>
+  <label class="check"><input id="autoStart" type="checkbox" /> Start the next phase automatically</label>
+
+  <hr />
+  <label class="check"><input id="flash" type="checkbox" /> Flash key when done</label>
+  <label class="check"><input id="sound" type="checkbox" /> Play sound when done</label>
+  <label class="check"><input id="repeatSound" type="checkbox" /> Repeat sound until dismissed</label>
+
+  <label class="check"><input id="notify" type="checkbox" /> Desktop notification</label>
+
+  <label for="snooze">Snooze <span class="muted">(hold the key while it rings)</span></label>
+  <select id="snooze">
+    <option value="0">Off (hold dismisses)</option>
+    <option value="60">1 minute</option>
+    <option value="300">5 minutes</option>
+    <option value="600">10 minutes</option>
+    <option value="900">15 minutes</option>
+  </select>
+
+  <label for="soundFile">Sound file</label>
+  <input id="soundFile" type="text" placeholder="/usr/share/sounds/freedesktop/stereo/alarm-clock-elapsed.oga" />
+  <div class="presets"><button id="test">Test sound</button><button id="testNotify">Test notification</button></div>
+
+  <p class="hint">
+    Tap: start / pause. Hold: restart the cycle. Touch the strip: skip to the next phase.<br />
+    When a phase ends: tap to start the next one, hold to snooze.<br />
+    With auto-start on, phases flow into each other and just chime.
+  </p>
+<script>
+const $ = (id) => document.getElementById(id);
+const MIN = { work: [1, 180], shortBreak: [1, 60], longBreak: [1, 60] };
+function fill(s) {
+  Object.keys(MIN).forEach((k) => { $(k).value = Math.round(s[k] / 60); });
+  $("rounds").value = String(s.rounds);
+  $("autoStart").checked = !!s.autoStart;
+  PI.fillAlarm(s);
+}
+PI.init({ work: 1500, shortBreak: 300, longBreak: 900, rounds: 4, autoStart: false,
+  flash: true, sound: true, repeatSound: false, notify: true, snooze: 300, soundFile: "" }, fill);
+PI.bindAlarm();
+Object.keys(MIN).forEach((k) => {
+  $(k).addEventListener("change", () => {
+    const [lo, hi] = MIN[k];
+    const m = Math.max(lo, Math.min(hi, Math.round(Number($(k).value) || lo)));
+    $(k).value = m;
+    PI.save({ [k]: m * 60 });
+  });
+});
+$("rounds").addEventListener("change", () => PI.save({ rounds: Number($("rounds").value) }));
+$("autoStart").addEventListener("change", () => PI.save({ autoStart: $("autoStart").checked }));
+$("presets").addEventListener("click", (e) => {
+  const p = e.target.dataset && e.target.dataset.p;
+  if (!p) return;
+  const [w, s, l] = p.split(",").map(Number);
+  PI.save({ work: w * 60, shortBreak: s * 60, longBreak: l * 60 });
+  fill(PI.settings);
+});
+</script>
+</body>
+</html>

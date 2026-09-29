@@ -1,6 +1,6 @@
 {
   "Name": "Countdown",
-  "Description": "Countdown timer, countdown to a date or daily time, and a stopwatch, with progress ring, flashing alarm and sound.",
+  "Description": "Countdown timer, countdown to a date or daily time, stopwatch with laps, and pomodoro, with progress ring, snooze, sound and desktop notifications.",
   "Author": "Zedwil",
   "Version": "0.1.0",
   "Icon": "icons/plugin",
@@ -23,7 +23,7 @@
       "Name": "Countdown Timer",
       "UUID": "dev.countdown.timer",
       "Icon": "icons/action",
-      "Tooltip": "Tap to start/pause, hold to reset. Set the duration in settings. On a dial: rotate to adjust, press to start/pause, touch to reset.",
+      "Tooltip": "Tap to start/pause, hold to reset. While ringing: tap to dismiss, hold to snooze. On a dial: rotate to adjust, press to start/pause, touch to reset.",
       "Controllers": [
         "Keypad",
         "Encoder"
@@ -42,8 +42,8 @@
         "layout": "layouts/strip.json",
         "TriggerDescription": {
           "Rotate": "Adjust duration",
-          "Push": "Start / pause",
-          "Touch": "Reset"
+          "Push": "Start / pause (dismiss)",
+          "Touch": "Reset (snooze)"
         },
         "StackColor": "#3ddc84"
       }
@@ -52,7 +52,7 @@
       "Name": "Countdown to Date",
       "UUID": "dev.countdown.deadline",
       "Icon": "icons/deadline",
-      "Tooltip": "Counts down to a date and time, or to a time every day. Tap to see the target; tap while ringing to dismiss.",
+      "Tooltip": "Counts down to a date and time, or to a time every day. Tap to see the target. While ringing: tap to dismiss, hold to snooze.",
       "Controllers": [
         "Keypad",
         "Encoder"
@@ -72,7 +72,7 @@
         "StackColor": "#3ddc84",
         "TriggerDescription": {
           "Push": "Show target / dismiss",
-          "Touch": "Show target / dismiss"
+          "Touch": "Show target / snooze"
         }
       }
     },
@@ -80,7 +80,7 @@
       "Name": "Stopwatch",
       "UUID": "dev.countdown.stopwatch",
       "Icon": "icons/stopwatch",
-      "Tooltip": "Tap to start/pause, hold to reset. Keeps running across page changes and restarts.",
+      "Tooltip": "Tap to start/pause, hold to reset. Lap mode: tap for a lap, hold to pause then reset. Keeps running across page changes and restarts.",
       "Controllers": [
         "Keypad",
         "Encoder"
@@ -99,8 +99,37 @@
         "layout": "layouts/strip.json",
         "StackColor": "#3ba7f0",
         "TriggerDescription": {
-          "Push": "Start / pause",
-          "Touch": "Reset"
+          "Rotate": "Scroll laps (lap mode)",
+          "Push": "Start / pause / lap",
+          "Touch": "Reset (lap mode: pause / reset)"
+        }
+      }
+    },
+    {
+      "Name": "Pomodoro",
+      "UUID": "dev.countdown.pomodoro",
+      "Icon": "icons/pomodoro",
+      "Tooltip": "Focus and break cycles. Tap to start/pause, hold to restart the cycle. When a phase ends: tap to start the next, hold to snooze.",
+      "Controllers": [
+        "Keypad",
+        "Encoder"
+      ],
+      "SupportedInMultiActions": false,
+      "DisableAutomaticStates": true,
+      "PropertyInspectorPath": "pi/pomodoro.html",
+      "States": [
+        {
+          "Image": "icons/key",
+          "Title": "",
+          "ShowTitle": false
+        }
+      ],
+      "Encoder": {
+        "layout": "layouts/strip.json",
+        "StackColor": "#ff6b5b",
+        "TriggerDescription": {
+          "Push": "Start / pause (next phase)",
+          "Touch": "Skip phase (snooze)"
         }
       }
     }

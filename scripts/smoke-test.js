@@ -6,9 +6,25 @@ const crypto = require("node:crypto");
 const path = require("node:path");
 const { spawn } = require("node:child_process");
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const os = require("node:os");
 
 const PLUGIN = path.join(__dirname, "..", "dev.countdown.sdPlugin");
 const CTX = "ctx-1";
+
+// Stand-in for notify-send: logs its arguments, prints an id, then "clicks" whatever
+// button name is written to $FAKE/action (so no real pop-ups during tests).
+const FAKE = fs.mkdtempSync(path.join(os.tmpdir(), "countdown-test-"));
+const FAKE_NOTIFY = path.join(FAKE, "notify-send");
+fs.writeFileSync(FAKE_NOTIFY, `#!/bin/sh
+printf '%s\\n' "$*" >> "${FAKE}/log"
+echo 42
+for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30; do
+  if [ -f "${FAKE}/action" ]; then cat "${FAKE}/action"; rm -f "${FAKE}/action"; exit 0; fi
+  sleep 0.1
+done
+`, { mode: 0o755 });
+const notifyLog = () => (fs.existsSync(path.join(FAKE, "log")) ? fs.readFileSync(path.join(FAKE, "log"), "utf8") : "");
 
 function frame(text) {
   const data = Buffer.from(text);
@@ -48,6 +64,16 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const last = (event, ctx) =>
   [...received].reverse().find((m) => m.event === event && (!ctx || m.context === ctx));
 // The time is drawn into the image; the SVG carries it as data-time for tests.
+const svgOf = (ctx) => Buffer.from(last("setImage", ctx).payload.image.split(",")[1], "base64").toString();
+const tap = (action, context) => {
+  send({ event: "keyDown", action, context, payload: {} });
+  send({ event: "keyUp", action, context, payload: {} });
+};
+const hold = async (action, context) => {
+  send({ event: "keyDown", action, context, payload: {} });
+  await sleep(750);
+  send({ event: "keyUp", action, context, payload: {} });
+};
 const shown = (event = "setImage", key = "image", ctx) => {
   const m = last(event, ctx);
   const svg = Buffer.from(m.payload[key].split(",")[1], "base64").toString();
@@ -68,13 +94,13 @@ server.listen(0, "127.0.0.1", async () => {
   const port = server.address().port;
   const proc = spawn(path.join(PLUGIN, "run.sh"),
     ["-port", String(port), "-pluginUUID", "dev.countdown", "-registerEvent", "registerPlugin", "-info", "{}"],
-    { stdio: ["ignore", "inherit", "inherit"] });
+    { stdio: ["ignore", "inherit", "inherit"], env: { ...process.env, COUNTDOWN_NOTIFY_CMD: FAKE_NOTIFY } });
   let failed = false;
   try {
     await sleep(600);
     assert.equal(received[0]?.event, "registerPlugin", "plugin registers");
 
-    const settings = { hours: 0, minutes: 0, seconds: 2, sound: false, label: "Tea" };
+    const settings = { hours: 0, minutes: 0, seconds: 2, sound: false, label: "Tea", snooze: 0 };
     send({ event: "willAppear", action: "dev.countdown.timer", context: CTX,
       payload: { settings, controller: "Keypad" } });
     await sleep(200);
@@ -125,7 +151,7 @@ server.listen(0, "127.0.0.1", async () => {
 
     // Overtime counts up
     send({ event: "didReceiveSettings", context: CTX,
-      payload: { settings: { minutes: 0, seconds: 1, overtime: true, sound: false } } });
+      payload: { settings: { minutes: 0, seconds: 1, overtime: true, sound: false, snooze: 0 } } });
     send({ event: "dialDown", context: CTX, payload: {} });
     await sleep(2400);
     assert.match(shown(), /^\+0:0[12]$/, "overtime counts up");
@@ -231,6 +257,88 @@ server.listen(0, "127.0.0.1", async () => {
     await sleep(100);
     assert.equal(shown("setImage", "image", SW), "0:00", "hold resets stopwatch");
 
+    // ---- Notification + snooze ----
+    const T = "dev.countdown.timer", SN = "snz-1";
+    assert.match(notifyLog(), /-A dismiss=Dismiss/, "timer finish sent a notification with buttons");
+    assert.match(notifyLog(), /Tea 0:02 timer finished/, "notification names the timer");
+    send({ event: "willAppear", action: T, context: SN,
+      payload: { settings: { seconds: 1, minutes: 0, sound: false, snooze: 1 }, controller: "Keypad" } });
+    await sleep(100);
+    tap(T, SN);
+    await sleep(1300);
+    const alerts = () => received.filter((m) => m.event === "showAlert" && m.context === SN).length;
+    assert.equal(alerts(), 1, "rang once");
+    assert.match(notifyLog(), /-A snooze=Snooze 1 min/, "snooze button offered");
+    await hold(T, SN);
+    await sleep(100);
+    assert.match(svgOf(SN), />Snoozed</, "hold while ringing snoozes");
+    await sleep(1200);
+    assert.equal(alerts(), 2, "rings again after snooze");
+    // Click Dismiss in the notification
+    fs.writeFileSync(path.join(FAKE, "action"), "dismiss\n");
+    await sleep(500);
+    assert.equal(shown("setImage", "image", SN), "0:01", "notification Dismiss resets the timer");
+    assert.doesNotMatch(svgOf(SN), /Snoozed/, "no longer snoozed");
+
+    // ---- Pomodoro ----
+    const P = "dev.countdown.pomodoro", PO = "pomo-1";
+    send({ event: "willAppear", action: P, context: PO,
+      payload: { settings: { work: 1, shortBreak: 1, longBreak: 2, rounds: 2, sound: false, notify: false },
+        controller: "Keypad" } });
+    await sleep(100);
+    assert.match(svgOf(PO), />Focus 1\/2</, "starts on focus 1");
+    tap(P, PO);
+    await sleep(1300);
+    assert.ok(received.some((m) => m.event === "showAlert" && m.context === PO), "focus end rings");
+    tap(P, PO); // next phase
+    await sleep(100);
+    assert.match(svgOf(PO), />Break</, "tap moves to the break");
+    send({ event: "touchTap", action: P, context: PO, payload: {} }); // skip
+    await sleep(100);
+    assert.match(svgOf(PO), />Focus 2\/2</, "skip goes to focus 2");
+    send({ event: "touchTap", action: P, context: PO, payload: {} });
+    await sleep(100);
+    assert.match(svgOf(PO), />Long break</, "long break after the last round");
+    assert.equal(shown("setImage", "image", PO), "0:02", "long break length");
+    await hold(P, PO);
+    await sleep(100);
+    assert.match(svgOf(PO), />Focus 1\/2</, "hold restarts the cycle");
+    // Auto-start: phases flow without ringing
+    send({ event: "didReceiveSettings", action: P, context: PO,
+      payload: { settings: { work: 1, shortBreak: 1, longBreak: 2, rounds: 2, sound: false, notify: false,
+        autoStart: true } } });
+    tap(P, PO);
+    await sleep(1400);
+    assert.match(svgOf(PO), />Break</, "auto-start moved on to the break");
+    assert.doesNotMatch(svgOf(PO), /c4001f|140a0c/, "auto-start does not ring");
+
+    // ---- Stopwatch lap mode ----
+    const S = "dev.countdown.stopwatch", LP = "lap-1";
+    send({ event: "willAppear", action: S, context: LP,
+      payload: { settings: { lapMode: true }, controller: "Encoder" } });
+    await sleep(100);
+    assert.match(svgOf(LP), />Lap 1</, "lap mode shows lap 1");
+    tap(S, LP); // start
+    await sleep(1150);
+    tap(S, LP); // lap
+    await sleep(100);
+    assert.match(shown("setImage", "image", LP), /^0:01\.\d 0:01$/, "finished lap with tenths + total");
+    assert.equal(last("setSettings", LP).payload.swLaps.length, 1, "lap persisted");
+    assert.deepEqual(last("sendToPropertyInspector", LP).payload.laps.length, 1, "inspector told about laps");
+    await sleep(2600);
+    assert.match(svgOf(LP), />Lap 2</, "back to the live lap");
+    assert.match(shown("setImage", "image", LP), /^0:0[0-2] 0:0[34]$/, "live lap + total");
+    send({ event: "dialRotate", action: S, context: LP, payload: { ticks: -1 } });
+    await sleep(100);
+    assert.match(svgOf(LP), />Lap 1\/1</, "dial scrolls through laps");
+    await hold(S, LP); // pause
+    await sleep(100);
+    assert.equal(last("setSettings", LP).payload.swRunning, false, "hold pauses in lap mode");
+    await hold(S, LP); // reset
+    await sleep(100);
+    assert.equal(last("setSettings", LP).payload.swLaps.length, 0, "second hold resets laps");
+    assert.equal(shown("setImage", "image", LP), "0:00", "reset to zero");
+
     console.log("smoke test: PASS");
   } catch (e) {
     failed = true;
@@ -241,6 +349,7 @@ server.listen(0, "127.0.0.1", async () => {
     await sleep(300);
     assert.notEqual(proc.exitCode, null, "plugin exits when socket closes");
     server.close();
+    fs.rmSync(FAKE, { recursive: true, force: true });
     process.exit(failed ? 1 : 0);
   }
 });

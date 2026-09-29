@@ -23,5 +23,7 @@ exec env \
   -u APPDIR -u APPIMAGE -u ARGV0 -u NODE_OPTIONS \
   PATH=/usr/bin:/bin:/usr/local/bin \
   XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}" \
+  DBUS_SESSION_BUS_ADDRESS="${DBUS_SESSION_BUS_ADDRESS:-unix:path=${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/bus}" \
   COUNTDOWN_DEBUG="${COUNTDOWN_DEBUG:-}" \
+  COUNTDOWN_NOTIFY_CMD="${COUNTDOWN_NOTIFY_CMD:-}" \
   "$NODE" "$DIR/plugin.js" "$@"
