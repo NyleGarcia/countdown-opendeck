@@ -29,7 +29,7 @@ jobs:
             exit 1
           fi
           VERSION="${TAG#v}"
-          MANIFEST_VERSION="$(node -e 'console.log(require("./dev.countdown.sdPlugin/manifest.json").Version)')"
+          MANIFEST_VERSION="$(node -e 'console.log(require("./systems.garcia.countdown.sdPlugin/manifest.json").Version)')"
           if [ "$VERSION" != "$MANIFEST_VERSION" ]; then
             echo "::error::tag '$TAG' (version $VERSION) does not match manifest Version '$MANIFEST_VERSION'"
             exit 1
@@ -47,7 +47,7 @@ jobs:
           set -euo pipefail
           mkdir -p dist
           ZIP="dist/countdown-opendeck-${VERSION}.zip"
-          zip -r "$ZIP" dev.countdown.sdPlugin -x '*.log'
+          zip -r "$ZIP" systems.garcia.countdown.sdPlugin -x '*.log'
           (cd dist && sha256sum "$(basename "$ZIP")" > "$(basename "$ZIP").sha256")
 
       - name: Create GitHub release

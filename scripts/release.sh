@@ -5,7 +5,7 @@
 # Usage: scripts/release.sh patch|minor|major|X.Y.Z[-pre] [--push]
 set -eu
 cd "$(dirname "$0")/.."
-MANIFEST=dev.countdown.sdPlugin/manifest.json
+MANIFEST=systems.garcia.countdown.sdPlugin/manifest.json
 
 [ $# -ge 1 ] || { echo "usage: $0 patch|minor|major|X.Y.Z [--push]" >&2; exit 2; }
 BUMP="$1"

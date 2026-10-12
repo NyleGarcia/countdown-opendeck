@@ -27,7 +27,7 @@ jobs:
       - name: Syntax check JS files
         run: |
           set -euo pipefail
-          for f in dev.countdown.sdPlugin/plugin.js scripts/*.js; do
+          for f in systems.garcia.countdown.sdPlugin/plugin.js scripts/*.js; do
             echo "checking $f"
             node --check "$f"
           done
@@ -39,7 +39,7 @@ jobs:
           const fs = require("fs");
           const path = require("path");
 
-          const pluginDir = path.join(process.cwd(), "dev.countdown.sdPlugin");
+          const pluginDir = path.join(process.cwd(), "systems.garcia.countdown.sdPlugin");
           const manifestPath = path.join(pluginDir, "manifest.json");
           const stripPath = path.join(pluginDir, "layouts", "strip.json");
 
@@ -78,8 +78,8 @@ jobs:
           }
 
           for (const action of manifest.Actions) {
-            if (!action.UUID || !action.UUID.startsWith("dev.countdown.")) {
-              throw new Error("Action UUID must start with dev.countdown.: " + action.UUID);
+            if (!action.UUID || !action.UUID.startsWith("systems.garcia.countdown.")) {
+              throw new Error("Action UUID must start with systems.garcia.countdown.: " + action.UUID);
             }
             if (action.PropertyInspectorPath) {
               checkFile(action.PropertyInspectorPath, "PropertyInspectorPath");
@@ -98,7 +98,7 @@ jobs:
           '
 
       - name: Shellcheck
-        run: shellcheck dev.countdown.sdPlugin/run.sh scripts/*.sh
+        run: shellcheck systems.garcia.countdown.sdPlugin/run.sh scripts/*.sh
 
       - name: Smoke test
         run: |

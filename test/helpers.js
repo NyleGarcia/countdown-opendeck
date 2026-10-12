@@ -1,6 +1,6 @@
 // Shared helpers for the unit tests. The plugin is loaded without a socket, so every
 // message it would send lands in `outbox` for the tests to inspect.
-const plugin = require("../dev.countdown.sdPlugin/plugin.js");
+const plugin = require("../systems.garcia.countdown.sdPlugin/plugin.js");
 
 // Quiet by default: no sound players or notification processes spawned from tests.
 const QUIET = { sound: false, notify: false };

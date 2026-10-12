@@ -1,7 +1,7 @@
 {
   "Name": "Countdown",
   "Description": "Countdown timer, countdown to a date or daily time, stopwatch with laps, and pomodoro, with progress ring, snooze, sound and desktop notifications.",
-  "Author": "Zedwil",
+  "Author": "NyleGarcia",
   "Version": "0.1.0",
   "Icon": "icons/plugin",
   "Category": "Countdown",
@@ -21,7 +21,7 @@
   "Actions": [
     {
       "Name": "Countdown Timer",
-      "UUID": "dev.countdown.timer",
+      "UUID": "systems.garcia.countdown.timer",
       "Icon": "icons/action",
       "Tooltip": "Tap to start/pause, hold to reset. While ringing: tap to dismiss, hold to snooze. On a dial: rotate to adjust, press to start/pause, touch to reset.",
       "Controllers": [
@@ -50,7 +50,7 @@
     },
     {
       "Name": "Countdown to Date",
-      "UUID": "dev.countdown.deadline",
+      "UUID": "systems.garcia.countdown.deadline",
       "Icon": "icons/deadline",
       "Tooltip": "Counts down to a date and time, or to a time every day. Tap to see the target. While ringing: tap to dismiss, hold to snooze.",
       "Controllers": [
@@ -78,7 +78,7 @@
     },
     {
       "Name": "Stopwatch",
-      "UUID": "dev.countdown.stopwatch",
+      "UUID": "systems.garcia.countdown.stopwatch",
       "Icon": "icons/stopwatch",
       "Tooltip": "Tap to start/pause, hold to reset. Lap mode: tap for a lap, hold to pause then reset. Keeps running across page changes and restarts.",
       "Controllers": [
@@ -107,7 +107,7 @@
     },
     {
       "Name": "Pomodoro",
-      "UUID": "dev.countdown.pomodoro",
+      "UUID": "systems.garcia.countdown.pomodoro",
       "Icon": "icons/pomodoro",
       "Tooltip": "Focus and break cycles. Tap to start/pause, hold to restart the cycle. When a phase ends: tap to start the next, hold to snooze.",
       "Controllers": [

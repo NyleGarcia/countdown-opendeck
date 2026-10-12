@@ -160,7 +160,7 @@ Restart OpenDeck after installing. Because it's a symlink, edits take effect on 
 ### Uninstall
 
 ```sh
-rm -rf ~/.config/opendeck/plugins/dev.countdown.sdPlugin
+rm -rf ~/.config/opendeck/plugins/systems.garcia.countdown.sdPlugin
 ```
 
 ## Troubleshooting
@@ -179,7 +179,7 @@ If your Node lives somewhere else (nvm, fnm, asdf, …), set `COUNTDOWN_NODE` in
 OpenDeck starts with. Another option is to symlink your Node binary to `/usr/local/bin/node`.
 
 **Where are the logs?** OpenDeck writes the plugin's output to
-`~/.local/share/opendeck/logs/plugins/dev.countdown.sdPlugin.log`. For more detail, start OpenDeck
+`~/.local/share/opendeck/logs/plugins/systems.garcia.countdown.sdPlugin.log`. For more detail, start OpenDeck
 with `COUNTDOWN_DEBUG=1`.
 
 **No sound.** Press **Test sound** in the settings. Check that the sound file exists and that
@@ -214,7 +214,7 @@ and the files it points to, runs `shellcheck` on the shell scripts, and runs the
 ### Releasing
 
 Releases follow [semantic versioning](https://semver.org). The `Version` field in
-`dev.countdown.sdPlugin/manifest.json` is the source of truth.
+`systems.garcia.countdown.sdPlugin/manifest.json` is the source of truth.
 
 ```sh
 scripts/release.sh patch            # 0.1.0 -> 0.1.1
@@ -236,7 +236,7 @@ as prereleases.
 ### Project layout
 
 ```
-dev.countdown.sdPlugin/     the plugin (this folder is what ships in the zip)
+systems.garcia.countdown.sdPlugin/     the plugin (this folder is what ships in the zip)
   manifest.json             the four actions, with key and dial definitions
   run.sh                    cleans up the launcher environment and finds Node
   plugin.js                 the four actions, alarm, snooze, notifications, SVG rendering

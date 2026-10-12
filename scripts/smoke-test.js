@@ -9,7 +9,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const os = require("node:os");
 
-const PLUGIN = path.join(__dirname, "..", "dev.countdown.sdPlugin");
+const PLUGIN = path.join(__dirname, "..", "systems.garcia.countdown.sdPlugin");
 const CTX = "ctx-1";
 
 // Stand-in for notify-send: logs its arguments, prints an id, then "clicks" whatever
@@ -93,7 +93,7 @@ server.on("upgrade", (req, socket) => {
 server.listen(0, "127.0.0.1", async () => {
   const port = server.address().port;
   const proc = spawn(path.join(PLUGIN, "run.sh"),
-    ["-port", String(port), "-pluginUUID", "dev.countdown", "-registerEvent", "registerPlugin", "-info", "{}"],
+    ["-port", String(port), "-pluginUUID", "systems.garcia.countdown", "-registerEvent", "registerPlugin", "-info", "{}"],
     { stdio: ["ignore", "inherit", "inherit"], env: { ...process.env, COUNTDOWN_NOTIFY_CMD: FAKE_NOTIFY } });
   let failed = false;
   try {
@@ -101,7 +101,7 @@ server.listen(0, "127.0.0.1", async () => {
     assert.equal(received[0]?.event, "registerPlugin", "plugin registers");
 
     const settings = { hours: 0, minutes: 0, seconds: 2, sound: false, label: "Tea", snooze: 0 };
-    send({ event: "willAppear", action: "dev.countdown.timer", context: CTX,
+    send({ event: "willAppear", action: "systems.garcia.countdown.timer", context: CTX,
       payload: { settings, controller: "Keypad" } });
     await sleep(200);
     assert.equal(shown(), "0:02", "initial time");
@@ -160,7 +160,7 @@ server.listen(0, "127.0.0.1", async () => {
     assert.equal(shown(), "0:01", "touch resets");
 
     // Encoder: custom one-pixmap layout + strip canvas
-    send({ event: "willAppear", action: "dev.countdown.timer", context: "enc-1",
+    send({ event: "willAppear", action: "systems.garcia.countdown.timer", context: "enc-1",
       payload: { settings: { minutes: 3 }, controller: "Encoder" } });
     await sleep(150);
     const lay = received.find((m) => m.event === "setFeedbackLayout" && m.context === "enc-1");
@@ -173,7 +173,7 @@ server.listen(0, "127.0.0.1", async () => {
       `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
     const DL = "dl-1";
     const now = Date.now();
-    send({ event: "willAppear", action: "dev.countdown.deadline", context: DL,
+    send({ event: "willAppear", action: "systems.garcia.countdown.deadline", context: DL,
       payload: { settings: { mode: "date", target: local(new Date(now + 2500)), setAt: now, sound: false,
         overtime: false }, controller: "Keypad" } });
     await sleep(150);
@@ -181,26 +181,26 @@ server.listen(0, "127.0.0.1", async () => {
     await sleep(2800);
     assert.ok(received.some((m) => m.event === "showAlert" && m.context === DL), "deadline alerts");
     assert.equal(shown("setImage", "image", DL), "0:00", "deadline shows zero");
-    send({ event: "keyDown", action: "dev.countdown.deadline", context: DL, payload: {} });
-    send({ event: "keyUp", action: "dev.countdown.deadline", context: DL, payload: {} });
+    send({ event: "keyDown", action: "systems.garcia.countdown.deadline", context: DL, payload: {} });
+    send({ event: "keyUp", action: "systems.garcia.countdown.deadline", context: DL, payload: {} });
     await sleep(100);
     assert.equal(shown("setImage", "image", DL), "0:00", "dismissed stays at zero without overtime");
 
     // Far away: days over hours:minutes; tap peeks at the target
     const far = new Date(now + 3 * 86400000 + 5 * 3600000 + 30 * 60000);
-    send({ event: "didReceiveSettings", action: "dev.countdown.deadline", context: DL,
+    send({ event: "didReceiveSettings", action: "systems.garcia.countdown.deadline", context: DL,
       payload: { settings: { mode: "date", target: local(far), sound: false } } });
     await sleep(100);
     assert.match(shown("setImage", "image", DL), /^3d 05:(29|30)$/, "days + hh:mm");
-    send({ event: "keyDown", action: "dev.countdown.deadline", context: DL, payload: {} });
-    send({ event: "keyUp", action: "dev.countdown.deadline", context: DL, payload: {} });
+    send({ event: "keyDown", action: "systems.garcia.countdown.deadline", context: DL, payload: {} });
+    send({ event: "keyUp", action: "systems.garcia.countdown.deadline", context: DL, payload: {} });
     await sleep(100);
     const peekSvg = Buffer.from(last("setImage", DL).payload.image.split(",")[1], "base64").toString();
     assert.match(peekSvg, /(Sun|Mon|Tue|Wed|Thu|Fri|Sat) \d\d:\d\d</, "tap peeks at target");
 
     // Past date with a fresh load: done, never rings late
     const alertsBefore = received.filter((m) => m.event === "showAlert").length;
-    send({ event: "didReceiveSettings", action: "dev.countdown.deadline", context: DL,
+    send({ event: "didReceiveSettings", action: "systems.garcia.countdown.deadline", context: DL,
       payload: { settings: { mode: "date", target: local(new Date(now - 60000)), overtime: true } } });
     await sleep(400);
     assert.match(shown("setImage", "image", DL), /^\+\d+:\d\d$/, "past date counts up with overtime");
@@ -208,57 +208,57 @@ server.listen(0, "127.0.0.1", async () => {
 
     // Daily mode: next occurrence is always in the future
     const inOneMin = new Date(now + 90000);
-    send({ event: "didReceiveSettings", action: "dev.countdown.deadline", context: DL,
+    send({ event: "didReceiveSettings", action: "systems.garcia.countdown.deadline", context: DL,
       payload: { settings: { mode: "daily", time: `${pad(inOneMin.getHours())}:${pad(inOneMin.getMinutes())}:00` } } });
     await sleep(100);
     assert.match(shown("setImage", "image", DL), /^[01]:\d\d$/, "daily counts to today's time");
 
     // Unconfigured
-    send({ event: "didReceiveSettings", action: "dev.countdown.deadline", context: DL,
+    send({ event: "didReceiveSettings", action: "systems.garcia.countdown.deadline", context: DL,
       payload: { settings: { mode: "date" } } });
     await sleep(100);
     assert.equal(shown("setImage", "image", DL), "--:--", "unset target");
 
     // ---- Stopwatch ----
     const SW = "sw-1";
-    send({ event: "willAppear", action: "dev.countdown.stopwatch", context: SW,
+    send({ event: "willAppear", action: "systems.garcia.countdown.stopwatch", context: SW,
       payload: { settings: {}, controller: "Keypad" } });
     await sleep(100);
     assert.equal(shown("setImage", "image", SW), "0:00", "stopwatch idle");
-    send({ event: "keyDown", action: "dev.countdown.stopwatch", context: SW, payload: {} });
-    send({ event: "keyUp", action: "dev.countdown.stopwatch", context: SW, payload: {} });
+    send({ event: "keyDown", action: "systems.garcia.countdown.stopwatch", context: SW, payload: {} });
+    send({ event: "keyUp", action: "systems.garcia.countdown.stopwatch", context: SW, payload: {} });
     await sleep(1300);
     assert.equal(shown("setImage", "image", SW), "0:01", "stopwatch counts up");
     assert.equal(last("setSettings", SW).payload.swRunning, true, "running state persisted");
 
     // A stale inspector save must not stop or rewind it
-    send({ event: "didReceiveSettings", action: "dev.countdown.stopwatch", context: SW,
+    send({ event: "didReceiveSettings", action: "systems.garcia.countdown.stopwatch", context: SW,
       payload: { settings: { label: "Lap", swRunning: false, swAccum: 0, swStart: 0 } } });
     await sleep(900);
     assert.equal(shown("setImage", "image", SW), "0:02", "stale settings ignored");
     assert.equal(last("setSettings", SW).payload.label, "Lap", "label kept on re-save");
 
-    send({ event: "keyDown", action: "dev.countdown.stopwatch", context: SW, payload: {} });
-    send({ event: "keyUp", action: "dev.countdown.stopwatch", context: SW, payload: {} });
+    send({ event: "keyDown", action: "systems.garcia.countdown.stopwatch", context: SW, payload: {} });
+    send({ event: "keyUp", action: "systems.garcia.countdown.stopwatch", context: SW, payload: {} });
     await sleep(100);
     const saved = last("setSettings", SW).payload;
     assert.equal(saved.swRunning, false, "pause persisted");
     assert.ok(saved.swAccum >= 2000, "accumulated time persisted");
 
     // Restart: a new plugin process restores from settings
-    send({ event: "willAppear", action: "dev.countdown.stopwatch", context: "sw-2",
+    send({ event: "willAppear", action: "systems.garcia.countdown.stopwatch", context: "sw-2",
       payload: { settings: { swRunning: true, swStart: Date.now() - 65000, swAccum: 0 }, controller: "Keypad" } });
     await sleep(100);
     assert.equal(shown("setImage", "image", "sw-2"), "1:05", "restored after restart");
 
-    send({ event: "keyDown", action: "dev.countdown.stopwatch", context: SW, payload: {} });
+    send({ event: "keyDown", action: "systems.garcia.countdown.stopwatch", context: SW, payload: {} });
     await sleep(800);
-    send({ event: "keyUp", action: "dev.countdown.stopwatch", context: SW, payload: {} });
+    send({ event: "keyUp", action: "systems.garcia.countdown.stopwatch", context: SW, payload: {} });
     await sleep(100);
     assert.equal(shown("setImage", "image", SW), "0:00", "hold resets stopwatch");
 
     // ---- Notification + snooze ----
-    const T = "dev.countdown.timer", SN = "snz-1";
+    const T = "systems.garcia.countdown.timer", SN = "snz-1";
     assert.match(notifyLog(), /-A dismiss=Dismiss/, "timer finish sent a notification with buttons");
     assert.match(notifyLog(), /Tea 0:02 timer finished/, "notification names the timer");
     send({ event: "willAppear", action: T, context: SN,
@@ -281,7 +281,7 @@ server.listen(0, "127.0.0.1", async () => {
     assert.doesNotMatch(svgOf(SN), /Snoozed/, "no longer snoozed");
 
     // ---- Pomodoro ----
-    const P = "dev.countdown.pomodoro", PO = "pomo-1";
+    const P = "systems.garcia.countdown.pomodoro", PO = "pomo-1";
     send({ event: "willAppear", action: P, context: PO,
       payload: { settings: { work: 1, shortBreak: 1, longBreak: 2, rounds: 2, sound: false, notify: false },
         controller: "Keypad" } });
@@ -313,7 +313,7 @@ server.listen(0, "127.0.0.1", async () => {
     assert.doesNotMatch(svgOf(PO), /c4001f|140a0c/, "auto-start does not ring");
 
     // ---- Stopwatch lap mode ----
-    const S = "dev.countdown.stopwatch", LP = "lap-1";
+    const S = "systems.garcia.countdown.stopwatch", LP = "lap-1";
     send({ event: "willAppear", action: S, context: LP,
       payload: { settings: { lapMode: true }, controller: "Encoder" } });
     await sleep(100);

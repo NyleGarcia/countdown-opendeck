@@ -5,7 +5,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { builtinModules } = require("node:module");
 
-const PLUGIN_DIR = path.join(__dirname, "..", "dev.countdown.sdPlugin");
+const PLUGIN_DIR = path.join(__dirname, "..", "systems.garcia.countdown.sdPlugin");
 
 function jsFiles(dir) {
   return fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => {

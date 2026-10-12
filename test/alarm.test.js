@@ -37,14 +37,14 @@ test("dismiss clears snooze and resets the timer", () => {
 
 test("key input routes through the alarm while ringing", () => {
   plugin.outbox.length = 0;
-  plugin.handle({ event: "willAppear", action: "dev.countdown.timer", context: "route",
+  plugin.handle({ event: "willAppear", action: "systems.garcia.countdown.timer", context: "route",
     payload: { settings: { minutes: 0, seconds: 1, sound: false, notify: false, snooze: 60 } } });
   const t = plugin.instances.get("route");
   timer.press("route", t, Date.now());
   timer.tick("route", t, Date.now() + 2000);
   assert.equal(t.ringing, true);
-  plugin.handle({ event: "touchTap", action: "dev.countdown.timer", context: "route", payload: {} });
+  plugin.handle({ event: "touchTap", action: "systems.garcia.countdown.timer", context: "route", payload: {} });
   assert.equal(t.snoozeUntil > 0, true, "touch snoozes");
-  plugin.handle({ event: "dialDown", action: "dev.countdown.timer", context: "route", payload: {} });
+  plugin.handle({ event: "dialDown", action: "systems.garcia.countdown.timer", context: "route", payload: {} });
   assert.equal(plugin.alerting(t), false, "press dismisses");
 });
