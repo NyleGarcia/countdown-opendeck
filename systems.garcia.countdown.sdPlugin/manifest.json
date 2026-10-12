@@ -2,7 +2,7 @@
   "Name": "Countdown",
   "Description": "Countdown timer, countdown to a date or daily time, stopwatch with laps, and pomodoro, with progress ring, snooze, sound and desktop notifications.",
   "Author": "NyleGarcia",
-  "Version": "0.1.0",
+  "Version": "0.2.0",
   "Icon": "icons/plugin",
   "Category": "Countdown",
   "CategoryIcon": "icons/plugin",
