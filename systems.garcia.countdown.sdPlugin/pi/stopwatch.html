@@ -8,27 +8,26 @@
 <script src="_shared.js"></script>
 </head>
 <body>
-  <label for="label">Label <span class="muted">(optional, above the time)</span></label>
-  <input id="label" type="text" maxlength="12" placeholder="Run" />
+  <label for="label"><span data-i18n="pi.label">Label</span> <span class="muted" data-i18n="pi.label.note">(optional, above the time)</span></label>
+  <input id="label" type="text" maxlength="12" placeholder="Run" data-i18n-placeholder="pi.stopwatch.label_example" />
 
-  <label class="check"><input id="lapMode" type="checkbox" /> Lap mode</label>
+  <label class="check"><input id="lapMode" type="checkbox" /> <span data-i18n="pi.stopwatch.lap_mode">Lap mode</span></label>
   <p class="hint" id="hintPlain">
-    Tap: start / pause. Hold: reset.<br />
-    On a dial: press to start / pause, touch the strip to reset.
+    <span data-i18n="pi.stopwatch.hint.plain.controls">Tap: start / pause. Hold: reset.</span><br />
+    <span data-i18n="pi.stopwatch.hint.plain.dial">On a dial: press to start / pause, touch the strip to reset.</span>
   </p>
   <p class="hint" id="hintLap" hidden>
-    Tap: start, then tap for each lap. Hold: pause, then hold again to reset.<br />
-    The key shows the current lap with the total underneath. On a dial: press = lap,
-    touch = pause / reset, turn to scroll back through laps.
+    <span data-i18n="pi.stopwatch.hint.lap.controls">Tap: start, then tap for each lap. Hold: pause, then hold again to reset.</span><br />
+    <span data-i18n="pi.stopwatch.hint.lap.display">The key shows the current lap with the total underneath. On a dial: press = lap, touch = pause / reset, turn to scroll back through laps.</span>
   </p>
 
   <div id="lapBox" hidden>
-    <label>Laps</label>
+    <label data-i18n="pi.stopwatch.laps">Laps</label>
     <table id="laps"></table>
-    <p class="hint" id="noLaps">No laps yet.</p>
+    <p class="hint" id="noLaps" data-i18n="pi.stopwatch.no_laps">No laps yet.</p>
   </div>
 
-  <p class="hint">
+  <p class="hint" data-i18n="pi.stopwatch.hint.ring">
     The ring sweeps once a minute. The stopwatch keeps running across page changes and
     OpenDeck restarts.
   </p>
@@ -47,7 +46,9 @@ function fmt(ms) {
   const p = (n) => String(n).padStart(2, "0");
   return (h ? `${h}:${p(m)}:${p(sec)}` : `${m}:${p(sec)}`) + `.${t % 10}`;
 }
+let lastLaps = [];
 function showLaps(laps) {
+  lastLaps = laps;
   const table = $("laps");
   table.textContent = "";
   $("noLaps").hidden = Array.isArray(laps) && laps.length > 0;
@@ -57,7 +58,7 @@ function showLaps(laps) {
     const tr = document.createElement("tr");
     if (laps.length > 1 && ms === best) tr.className = "best";
     else if (laps.length > 1 && ms === worst) tr.className = "worst";
-    const a = document.createElement("td"); a.textContent = `Lap ${i + 1}`;
+    const a = document.createElement("td"); a.textContent = PI.t("pi.stopwatch.lap", "Lap {lap}", { lap: i + 1 });
     const b = document.createElement("td"); b.textContent = fmt(ms);
     tr.append(a, b);
     table.append(tr);
@@ -74,6 +75,7 @@ PI.bindAlarm();
 $("lapMode").addEventListener("change", () => { PI.save({ lapMode: $("lapMode").checked }); fill(PI.settings); });
 PI.onMessage((p) => { if (Array.isArray(p.laps)) showLaps(p.laps); });
 PI.onConnect(() => PI.send({ command: "laps" }));
+PI.onStrings(() => showLaps(lastLaps));
 showLaps([]);
 </script>
 </body>

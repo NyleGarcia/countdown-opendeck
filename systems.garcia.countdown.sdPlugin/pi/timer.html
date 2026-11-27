@@ -8,11 +8,11 @@
 <script src="_shared.js"></script>
 </head>
 <body>
-  <label>Duration</label>
+  <label data-i18n="pi.timer.duration">Duration</label>
   <div class="row">
-    <div><input id="hours" type="number" min="0" max="99" /><span>hours</span></div>
-    <div><input id="minutes" type="number" min="0" max="59" /><span>min</span></div>
-    <div><input id="seconds" type="number" min="0" max="59" /><span>sec</span></div>
+    <div><input id="hours" type="number" min="0" max="99" /><span data-i18n="pi.timer.hours">hours</span></div>
+    <div><input id="minutes" type="number" min="0" max="59" /><span data-i18n="pi.timer.minutes">min</span></div>
+    <div><input id="seconds" type="number" min="0" max="59" /><span data-i18n="pi.timer.seconds">sec</span></div>
   </div>
   <div class="presets" id="presets">
     <button data-s="60">1m</button>
@@ -23,43 +23,43 @@
     <button data-s="3600">1h</button>
   </div>
 
-  <label for="label">Label <span class="muted">(optional, above the time)</span></label>
-  <input id="label" type="text" maxlength="12" placeholder="Tea" />
+  <label for="label"><span data-i18n="pi.label">Label</span> <span class="muted" data-i18n="pi.label.note">(optional, above the time)</span></label>
+  <input id="label" type="text" maxlength="12" placeholder="Tea" data-i18n-placeholder="pi.timer.label_example" />
 
   <hr />
-  <label class="check"><input id="flash" type="checkbox" /> Flash key when done</label>
-  <label class="check"><input id="sound" type="checkbox" /> Play sound when done</label>
-  <label class="check"><input id="repeatSound" type="checkbox" /> Repeat sound until dismissed</label>
-  <label class="check"><input id="overtime" type="checkbox" /> Keep counting up after zero (+0:12)</label>
+  <label class="check"><input id="flash" type="checkbox" /> <span data-i18n="pi.flash">Flash key when done</span></label>
+  <label class="check"><input id="sound" type="checkbox" /> <span data-i18n="pi.sound">Play sound when done</span></label>
+  <label class="check"><input id="repeatSound" type="checkbox" /> <span data-i18n="pi.repeat_sound">Repeat sound until dismissed</span></label>
+  <label class="check"><input id="overtime" type="checkbox" /> <span data-i18n="pi.timer.overtime">Keep counting up after zero (+0:12)</span></label>
 
-  <label class="check"><input id="notify" type="checkbox" /> Desktop notification</label>
+  <label class="check"><input id="notify" type="checkbox" /> <span data-i18n="pi.notify">Desktop notification</span></label>
 
-  <label for="snooze">Snooze <span class="muted">(hold the key while it rings)</span></label>
+  <label for="snooze"><span data-i18n="pi.snooze">Snooze</span> <span class="muted" data-i18n="pi.snooze.note">(hold the key while it rings)</span></label>
   <select id="snooze">
-    <option value="0">Off (hold dismisses)</option>
-    <option value="60">1 minute</option>
-    <option value="300">5 minutes</option>
-    <option value="600">10 minutes</option>
-    <option value="900">15 minutes</option>
+    <option value="0" data-i18n="pi.snooze.off">Off (hold dismisses)</option>
+    <option value="60" data-i18n="pi.duration.1m">1 minute</option>
+    <option value="300" data-i18n="pi.duration.5m">5 minutes</option>
+    <option value="600" data-i18n="pi.duration.10m">10 minutes</option>
+    <option value="900" data-i18n="pi.duration.15m">15 minutes</option>
   </select>
 
-  <label for="soundFile">Sound file</label>
+  <label for="soundFile" data-i18n="pi.sound_file">Sound file</label>
   <input id="soundFile" type="text" placeholder="/usr/share/sounds/freedesktop/stereo/alarm-clock-elapsed.oga" />
-  <div class="presets"><button id="test">Test sound</button><button id="testNotify">Test notification</button></div>
+  <div class="presets"><button id="test" data-i18n="pi.test_sound">Test sound</button><button id="testNotify" data-i18n="pi.test_notify">Test notification</button></div>
 
-  <label for="dialStep">Dial step</label>
+  <label for="dialStep" data-i18n="pi.timer.dial_step">Dial step</label>
   <select id="dialStep">
-    <option value="1">1 second</option>
-    <option value="5">5 seconds</option>
-    <option value="15">15 seconds</option>
-    <option value="30">30 seconds</option>
-    <option value="60">1 minute</option>
-    <option value="300">5 minutes</option>
+    <option value="1" data-i18n="pi.duration.1s">1 second</option>
+    <option value="5" data-i18n="pi.duration.5s">5 seconds</option>
+    <option value="15" data-i18n="pi.duration.15s">15 seconds</option>
+    <option value="30" data-i18n="pi.duration.30s">30 seconds</option>
+    <option value="60" data-i18n="pi.duration.1m">1 minute</option>
+    <option value="300" data-i18n="pi.duration.5m">5 minutes</option>
   </select>
 
   <p class="hint">
-    Tap: start / pause. Hold: reset. Tap while ringing: dismiss. Hold while ringing: snooze.<br />
-    Duration changes made mid-run apply on the next reset.
+    <span data-i18n="pi.timer.hint.controls">Tap: start / pause. Hold: reset. Tap while ringing: dismiss. Hold while ringing: snooze.</span><br />
+    <span data-i18n="pi.timer.hint.midrun">Duration changes made mid-run apply on the next reset.</span>
   </p>
 <script>
 const $ = (id) => document.getElementById(id);

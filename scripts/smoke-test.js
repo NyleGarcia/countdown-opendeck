@@ -93,7 +93,8 @@ server.on("upgrade", (req, socket) => {
 server.listen(0, "127.0.0.1", async () => {
   const port = server.address().port;
   const proc = spawn(path.join(PLUGIN, "run.sh"),
-    ["-port", String(port), "-pluginUUID", "systems.garcia.countdown", "-registerEvent", "registerPlugin", "-info", "{}"],
+    ["-port", String(port), "-pluginUUID", "systems.garcia.countdown", "-registerEvent", "registerPlugin",
+      "-info", JSON.stringify({ application: { language: "en" } })],
     { stdio: ["ignore", "inherit", "inherit"], env: { ...process.env, COUNTDOWN_NOTIFY_CMD: FAKE_NOTIFY } });
   let failed = false;
   try {
@@ -338,6 +339,13 @@ server.listen(0, "127.0.0.1", async () => {
     await sleep(100);
     assert.equal(last("setSettings", LP).payload.swLaps.length, 0, "second hold resets laps");
     assert.equal(shown("setImage", "image", LP), "0:00", "reset to zero");
+
+    // ---------- language: a settings panel asks for its words ----------
+    send({ event: "sendToPlugin", action: S, context: LP, payload: { command: "strings" } });
+    await sleep(100);
+    const words = last("sendToPropertyInspector", LP).payload;
+    assert.equal(words.language, "en", "language taken from -info");
+    assert.equal(words.strings["pi.stopwatch.laps"], "Laps", "settings panel strings sent");
 
     console.log("smoke test: PASS");
   } catch (e) {
