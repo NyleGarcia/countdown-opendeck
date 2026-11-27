@@ -61,6 +61,13 @@ const received = [];
 let sock;
 const send = (msg) => sock.write(frame(JSON.stringify(msg)));
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+// Wait for something the plugin sends rather than guessing how long it takes: a key image
+// is a large frame and can arrive well after the small message sent just before it.
+async function until(check, ms = 3000) {
+  for (const end = Date.now() + ms; Date.now() < end; await sleep(25)) {
+    try { if (check()) return; } catch { /* nothing matching received yet */ }
+  }
+}
 const last = (event, ctx) =>
   [...received].reverse().find((m) => m.event === event && (!ctx || m.context === ctx));
 // The time is drawn into the image; the SVG carries it as data-time for tests.
@@ -191,7 +198,7 @@ server.listen(0, "127.0.0.1", async () => {
     const far = new Date(now + 3 * 86400000 + 5 * 3600000 + 30 * 60000);
     send({ event: "didReceiveSettings", action: "systems.garcia.countdown.deadline", context: DL,
       payload: { settings: { mode: "date", target: local(far), sound: false } } });
-    await sleep(100);
+    await until(() => /^3d /.test(shown("setImage", "image", DL)));
     assert.match(shown("setImage", "image", DL), /^3d 05:(29|30)$/, "days + hh:mm");
     send({ event: "keyDown", action: "systems.garcia.countdown.deadline", context: DL, payload: {} });
     send({ event: "keyUp", action: "systems.garcia.countdown.deadline", context: DL, payload: {} });
