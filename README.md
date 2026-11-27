@@ -43,6 +43,8 @@ plays, and a desktop notification appears with **Dismiss** and **Snooze** button
 - **Overtime (optional):** keeps counting up after zero, for example `+0:12`.
 - **Optional label:** a short name drawn above the time, like "Tea" or "Pomodoro".
 - **Runs in the background:** timers keep going when you switch pages or profiles.
+- **Translated:** keys, settings panels, notifications and the action list follow OpenDeck's
+  language. English and French are included; see [Translations](#translations).
 - **No dependencies:** plain Node.js, no `npm install`.
 
 ## Controls
@@ -126,6 +128,63 @@ Laps are saved with the stopwatch, up to 99, so they survive an OpenDeck restart
 | Start the next phase automatically | Off | When on, phases flow into each other with a chime and a short notification, without ringing |
 | Flash / sound / repeat / notification / snooze / sound file | Same as the timer | |
 
+## Translations
+
+The keys, the settings panels, the notifications and the action list follow OpenDeck's language
+(Settings → Language). If OpenDeck doesn't say, the plugin uses the system locale (`LC_ALL`,
+`LC_MESSAGES`, `LANG`), and a language with no file falls back to English. English and French are
+included.
+
+> The French translation was not written by a native speaker and still needs a native review.
+> Corrections are welcome.
+
+Each language is one file next to `manifest.json` in `systems.garcia.countdown.sdPlugin/`, named by
+its code (`en.json`, `fr.json`). That is where OpenDeck looks for a plugin's translations, and the
+plugin reads the same files, so there is no build or copy step. The layout is the one OpenDeck
+expects: the plugin's `Name` and `Description` and each action's `Name` and `Tooltip` at the top
+level, and every string the plugin draws under `Localization`.
+
+### Adding a language
+
+1. Find the code OpenDeck uses for the language (`de`, `es`, `pt_BR`, ...). A region with no file of
+   its own uses its base language, so `fr_CA` picks `fr.json`.
+2. Copy the English file, which is the reference every other language is checked against:
+
+   ```sh
+   cd systems.garcia.countdown.sdPlugin
+   cp en.json de.json
+   ```
+
+3. Translate the values and leave every key as it is:
+   - `Name` and `Description` at the top, and the `Name` and `Tooltip` of each
+     `systems.garcia.countdown.*` action, are what OpenDeck shows in its action list.
+   - Under `Localization`, `key.*` is drawn on the keys and the touch strip, `notify.*` is the
+     desktop notification and its buttons, and `pi.*` is the settings panels.
+   - Keep `{placeholders}` such as `{lap}` or `{minutes}` spelled exactly as in English. They may
+     move within the sentence, which is how `{month} {day}` becomes `{day} {month}`. Nothing else
+     may use braces.
+   - Keys are 144 px wide. Keep `key.*` strings about as short as the English ones (around 12
+     characters); longer labels are drawn smaller.
+   - `key.deadline.day_unit` is the letter after a day count (`12d`). It is drawn as a
+     seven-segment glyph, so it must be a single letter the plugin can draw: `d` or `j` today.
+     Add a glyph to `SEGMENTS` in `plugin.js` if your language needs another.
+4. Run `node --test test/*.test.js`. It fails on a missing or extra key, an empty string, a
+   placeholder that differs from `en.json`, an action without a `Name` and `Tooltip`, and invalid
+   JSON.
+5. Restart OpenDeck, set its language, and look at every key state and settings panel. Started
+   with `COUNTDOWN_DEBUG=1`, the plugin logs the language it picked.
+
+### Adding a string
+
+Add the key to `en.json` and to every other language file, then use it with `tr("key...")` in
+`plugin.js`, `data-i18n="pi..."` in a settings panel's HTML, or `PI.t("pi...", "English", values)`
+in its script. The tests fail on a key that is used but missing, or present but unused.
+
+### Credits
+
+The translation system follows the one [MrBretze](https://github.com/MrBretze) contributed to
+[gpu-screen-recorder-opendeck](https://github.com/NyleGarcia/gpu-screen-recorder-opendeck) (PR #3).
+
 ## Requirements
 
 - Linux with [OpenDeck](https://github.com/nekename/OpenDeck) (tested with 7.1.0)
@@ -200,7 +259,8 @@ node scripts/smoke-test.js     # end-to-end test
 
 The **unit tests** use Node's built-in test runner, so there's nothing to install. They cover time
 formatting, the timer, date and daily countdowns, the stopwatch and laps, pomodoro phases, snooze
-and dismiss, and the SVG rendering. One test checks that the plugin only loads Node's built-in
+and dismiss, the SVG rendering, and the translations (the language files agree with each other and
+with the manifest, and every string the code asks for exists). One test checks that the plugin only loads Node's built-in
 modules, so it can never quietly gain a dependency.
 
 The **smoke test** stands in for OpenDeck with a small WebSocket server. It starts the plugin through
@@ -209,7 +269,8 @@ touch-strip layout, snoozing, and clicking a notification's **Dismiss** button. 
 `notify-send` for a stand-in, so no real notifications pop up.
 
 **CI** runs on every push and pull request. It syntax-checks the JavaScript, validates the manifest
-and the files it points to, runs `shellcheck` on the shell scripts, and runs the smoke test.
+and the files it points to, runs `shellcheck` on the shell scripts, and runs the unit tests and the
+smoke test.
 
 ### Releasing
 
@@ -229,7 +290,7 @@ with uncommitted changes, reuse an existing tag, or go to a lower version. Bumpi
 finalises it, so `1.0.0-rc.1` becomes `1.0.0`.
 
 Pushing the tag starts the **Release** workflow. It checks that the tag matches the manifest
-version, runs the smoke test, and publishes `countdown-opendeck-X.Y.Z.zip` plus its `.sha256`
+version, runs the unit tests and the smoke test, and publishes `countdown-opendeck-X.Y.Z.zip` plus its `.sha256`
 checksum as a GitHub Release with generated notes. Tags with a suffix, like `-rc.1`, are published
 as prereleases.
 
@@ -238,6 +299,7 @@ as prereleases.
 ```
 systems.garcia.countdown.sdPlugin/     the plugin (this folder is what ships in the zip)
   manifest.json             the four actions, with key and dial definitions
+  en.json, fr.json          translations, one file per language (en.json is the reference)
   run.sh                    cleans up the launcher environment and finds Node
   plugin.js                 the four actions, alarm, snooze, notifications, SVG rendering
   pi/                       settings panels: timer, deadline, stopwatch, pomodoro + shared JS/CSS

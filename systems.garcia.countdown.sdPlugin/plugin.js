@@ -33,6 +33,86 @@ for (let i = 2; i < process.argv.length; i += 2) {
 const debug = !!process.env.COUNTDOWN_DEBUG;
 const log = (...m) => debug && console.error("[countdown]", ...m);
 
+// ---------- language ----------
+
+// One file per language next to manifest.json (en.json, fr.json), which is where OpenDeck
+// reads a plugin's translations: the plugin's and each action's Name / Tooltip at the top
+// level for its action list, and everything this plugin draws under "Localization".
+//
+// English is the reference: a key missing from another language falls back to it, and a
+// key missing from English shows as itself, so a forgotten string is visible, not blank.
+const LANG_FILE = /^([a-z]{2,3}(?:_[A-Z]{2})?)\.json$/;
+const DEFAULT_LANG = "en";
+let language = DEFAULT_LANG;
+let reference = {};
+let strings = {};
+
+function loadStrings(code) {
+  try {
+    const data = JSON.parse(fs.readFileSync(path.join(__dirname, `${code}.json`), "utf8"));
+    const table = data && data.Localization;
+    return table && typeof table === "object" && !Array.isArray(table) ? table : {};
+  } catch {
+    return {};
+  }
+}
+
+function languages() {
+  try {
+    return fs.readdirSync(__dirname).map((name) => (LANG_FILE.exec(name) || [])[1]).filter(Boolean).sort();
+  } catch {
+    return [DEFAULT_LANG];
+  }
+}
+
+// "fr", "fr_FR", "fr-FR" and "fr_FR.UTF-8" all mean French. A region with no file of its
+// own uses the base language; anything unknown is English.
+function resolveLanguage(code) {
+  const [lang = "", region] = String(code || "").split(/[.@]/)[0].replace(/-/g, "_").split("_");
+  const base = lang.toLowerCase();
+  const known = languages();
+  const full = region ? `${base}_${region.toUpperCase()}` : base;
+  return [full, base].find((c) => known.includes(c)) || DEFAULT_LANG;
+}
+
+function setLanguage(code) {
+  reference = loadStrings(DEFAULT_LANG);
+  language = resolveLanguage(code);
+  strings = language === DEFAULT_LANG ? {} : loadStrings(language);
+  return language;
+}
+
+// OpenDeck's language, from the -info it starts plugins with; the system locale otherwise.
+function openDeckLanguage(info, env = process.env) {
+  let code;
+  try { code = JSON.parse(info || "{}").application.language; } catch { code = null; }
+  return (typeof code === "string" && code) || env.LC_ALL || env.LC_MESSAGES || env.LANG || "";
+}
+
+// Only plain {word} fields are filled, in one pass, and an unknown one is left as written:
+// a translation is data, never a format string.
+function fillPlaceholders(text, values) {
+  return text.replace(/\{([a-z_]+)\}/g, (whole, name) =>
+    (Object.hasOwn(values, name) ? String(values[name]) : whole));
+}
+
+function tr(key, values) {
+  const text = typeof strings[key] === "string" ? strings[key]
+    : typeof reference[key] === "string" ? reference[key] : key;
+  return values ? fillPlaceholders(text, values) : text;
+}
+
+// Every string whose key starts with `prefix`: what a settings panel is sent.
+function table(prefix) {
+  const out = {};
+  for (const [key, value] of Object.entries({ ...reference, ...strings })) {
+    if (key.startsWith(prefix) && typeof value === "string") out[key] = value;
+  }
+  return out;
+}
+
+setLanguage(DEFAULT_LANG); // connect() switches to OpenDeck's; tests stay in English
+
 // ---------- settings helpers ----------
 
 function num(v, fallback, max) {
@@ -83,18 +163,25 @@ function span(ms) {
   const d = Math.floor(secs / 86400);
   const h = Math.floor((secs % 86400) / 3600);
   const m = Math.floor((secs % 3600) / 60);
-  return { main: `${ms < 0 ? "+" : ""}${d}d`, sub: `${pad(h)}:${pad(m)}` };
+  return { main: `${ms < 0 ? "+" : ""}${d}${dayUnit()}`, sub: `${pad(h)}:${pad(m)}` };
 }
 
-const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+// The letter after a day count ("12d", "12j"). It is drawn as a seven-segment glyph, so a
+// translation without one falls back to "d" rather than leaving a gap.
+function dayUnit() {
+  const unit = tr("key.deadline.day_unit");
+  return /^[a-z]$/.test(unit) && Object.hasOwn(SEGMENTS, unit) ? unit : "d";
+}
 
 function describeTarget(at, now) {
   const d = new Date(at);
-  const hm = `${pad(d.getHours())}:${pad(d.getMinutes())}`;
-  if (at - now < 6 * DAY_MS && at > now) return `${DAYS[d.getDay()]} ${hm}`;
-  const year = d.getFullYear() !== new Date(now).getFullYear() ? ` ${d.getFullYear()}` : "";
-  return `${MONTHS[d.getMonth()]} ${d.getDate()}${year}`;
+  const time = `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  if (at - now < 6 * DAY_MS && at > now) {
+    return tr("key.target.weekday", { weekday: tr(`key.weekday.${d.getDay()}`), time });
+  }
+  const values = { month: tr(`key.month.${d.getMonth()}`), day: d.getDate(), year: d.getFullYear() };
+  const sameYear = d.getFullYear() === new Date(now).getFullYear();
+  return tr(sameYear ? "key.target.date" : "key.target.date_year", values);
 }
 
 // ---------- shared alarm ----------
@@ -154,8 +241,10 @@ function notify(context, t, message, withActions) {
   closeNotification(t);
   const argv = ["-a", "Countdown", "-i", ICON, "-p"];
   if (withActions) {
-    argv.push("-u", "critical", "-A", "dismiss=Dismiss");
-    if (t.settings.snooze) argv.push("-A", `snooze=Snooze ${Math.round(t.settings.snooze / 60) || 1} min`);
+    argv.push("-u", "critical", "-A", `dismiss=${tr("notify.dismiss")}`);
+    if (t.settings.snooze) {
+      argv.push("-A", `snooze=${tr("notify.snooze", { minutes: Math.round(t.settings.snooze / 60) || 1 })}`);
+    }
   } else {
     argv.push("-e");
   }
@@ -294,7 +383,10 @@ const timer = {
   },
   tick(context, t, now) {
     if (!t.running || t.ringing || t.endAt > now) return;
-    finish(context, t, { title: t.settings.label || "Timer", body: `${clock(t.total / 1000)} timer finished` });
+    finish(context, t, {
+      title: t.settings.label || tr("notify.timer.title"),
+      body: tr("notify.timer.body", { duration: clock(t.total / 1000) }),
+    });
     if (!t.settings.overtime) {
       t.running = false;
       t.remaining = 0;
@@ -369,10 +461,10 @@ const deadline = {
     if (t.fired || t.at === null || now < t.at) return;
     const at = new Date(t.at);
     finish(context, t, {
-      title: t.settings.label || "Countdown",
+      title: t.settings.label || tr("notify.title"),
       body: t.settings.mode === "daily"
-        ? `It's ${pad(at.getHours())}:${pad(at.getMinutes())}`
-        : `Reached ${describeTarget(t.at, t.at - 1)}`,
+        ? tr("notify.deadline.daily", { time: `${pad(at.getHours())}:${pad(at.getMinutes())}` })
+        : tr("notify.deadline.reached", { target: describeTarget(t.at, t.at - 1) }),
     });
     t.fired = true;
     if (t.settings.mode === "daily") {
@@ -385,7 +477,7 @@ const deadline = {
     const s = t.settings;
     if (t.at === null) {
       return { main: "--:--", sub: "", frac: 0, state: "idle", arc: "", paused: false,
-        label: s.label || (s.mode === "daily" ? "Set a time" : "Set a date") };
+        label: s.label || tr(s.mode === "daily" ? "key.deadline.set_time" : "key.deadline.set_date") };
     }
     const ms = t.at - now;
     let frac;
@@ -519,11 +611,11 @@ const stopwatch = {
     if (t.browseUntil && n) {
       const i = Math.min(t.browse, n - 1);
       return { ...base, main: tenths(laps[i]), frac: 1, arc: lapColor(laps, i), state: "active",
-        label: `Lap ${i + 1}/${n}` };
+        label: tr("key.stopwatch.lap_of", { lap: i + 1, count: n }) };
     }
     if (t.lapShowUntil && n) {
       return { ...base, main: tenths(laps[n - 1]), sub: clock(Math.floor(el / 1000)), frac: 1,
-        arc: lapColor(laps, n - 1), state: "active", label: `Lap ${n}` };
+        arc: lapColor(laps, n - 1), state: "active", label: tr("key.stopwatch.lap", { lap: n }) };
     }
     const current = el - (n ? t.sw.laps[n - 1] : 0);
     return {
@@ -531,7 +623,7 @@ const stopwatch = {
       main: clock(Math.floor(current / 1000)),
       sub: n ? clock(Math.floor(el / 1000)) : "",
       frac: current > 0 ? (current % 60000) / 60000 : 0,
-      label: `Lap ${n + 1}`,
+      label: tr("key.stopwatch.lap", { lap: n + 1 }),
     };
   },
 };
@@ -554,9 +646,10 @@ function lapColor(laps, i) {
 // ---------- kind: pomodoro ----------
 
 const PHASES = {
-  work: { label: (t) => `Focus ${t.round}/${t.settings.rounds}`, arc: "#ff6b5b", key: "work" },
-  short: { label: () => "Break", arc: "#3ddc84", key: "shortBreak" },
-  long: { label: () => "Long break", arc: "#3ba7f0", key: "longBreak" },
+  work: { label: (t) => tr("key.pomodoro.focus", { round: t.round, rounds: t.settings.rounds }),
+    arc: "#ff6b5b", key: "work" },
+  short: { label: () => tr("key.pomodoro.break"), arc: "#3ddc84", key: "shortBreak" },
+  long: { label: () => tr("key.pomodoro.long_break"), arc: "#3ba7f0", key: "longBreak" },
 };
 
 const pomodoro = {
@@ -600,10 +693,12 @@ const pomodoro = {
     t.remaining = t.phaseTotal = pomodoro.phaseMs(t);
   },
   message(t) {
-    if (t.phase !== "work") return { title: "Pomodoro", body: "Break over. Back to focus." };
+    const title = tr("notify.pomodoro.title");
+    if (t.phase !== "work") return { title, body: tr("notify.pomodoro.break_over") };
     const next = t.round >= t.settings.rounds ? "long" : "short";
-    const mins = Math.round(pomodoro.phaseMs(t, next) / 60000);
-    return { title: "Pomodoro", body: `Focus ${t.round} done. Take a ${mins} min ${next === "long" ? "long " : ""}break.` };
+    const minutes = Math.round(pomodoro.phaseMs(t, next) / 60000);
+    return { title, body: tr(next === "long" ? "notify.pomodoro.long_break" : "notify.pomodoro.short_break",
+      { round: t.round, minutes }) };
   },
   toggle(context, t, now) {
     if (t.running) { t.remaining = Math.max(0, t.endAt - now); t.running = false; }
@@ -694,7 +789,7 @@ function ringColor(frac) {
 const SEGMENTS = {
   0: "abcdef", 1: "bc", 2: "abged", 3: "abgcd", 4: "fgbc",
   5: "afgcd", 6: "afgedc", 7: "abc", 8: "abcdefg", 9: "abcdfg",
-  d: "bcdeg", "-": "g", " ": "",
+  d: "bcdeg", j: "bcde", "-": "g", " ": "", // d / j: the day unit, see dayUnit()
 };
 const DIGIT_ASPECT = 0.56; // width / height
 const THICK = 0.15; // stroke / height
@@ -854,7 +949,7 @@ function viewOf(t, now) {
   if (t.snoozeUntil > 0) {
     const ms = Math.max(0, t.snoozeUntil - now);
     return { main: fmt(ms), sub: "", frac: ms / t.snoozeLen, state: "active", arc: "#b58cff",
-      label: "Snoozed", paused: false };
+      label: tr("key.snoozed"), paused: false };
   }
   return KINDS[t.kind].view(t, now);
 }
@@ -995,7 +1090,12 @@ function handle(msg) {
       }
       if (payload.command === "testNotify") {
         notify(context, { settings: t.settings }, {
-          title: t.settings.label || "Countdown", body: "This is how the alarm notification looks." }, false);
+          title: t.settings.label || tr("notify.title"), body: tr("notify.test") }, false);
+      }
+      // A settings panel is a page loaded from disk and is not told OpenDeck's language,
+      // so it asks for its words when it opens.
+      if (payload.command === "strings") {
+        send({ event: "sendToPropertyInspector", context, payload: { language, strings: table("pi.") } });
       }
       break;
   }
@@ -1006,6 +1106,7 @@ function connect() {
     console.error("countdown: missing -port / -pluginUUID / -registerEvent");
     process.exit(1);
   }
+  log("language", setLanguage(openDeckLanguage(args.info)));
   ws = new WebSocket(`ws://127.0.0.1:${args.port}`);
   ws.addEventListener("open", () => {
     ws.send(JSON.stringify({ event: args.registerEvent, uuid: args.pluginUUID }));
@@ -1030,4 +1131,5 @@ if (require.main === module) connect();
 module.exports = {
   KINDS, get, fmt, span, clock, tenths, lapColor, describeTarget, keyImage, stripImage, viewOf,
   handle, dismiss, snooze, alerting, instances, outbox: queue,
+  setLanguage, resolveLanguage, openDeckLanguage, languages, tr, table, SEGMENTS,
 };
